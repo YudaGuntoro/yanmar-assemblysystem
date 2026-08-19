@@ -66,7 +66,7 @@ export default function SignInPage() {
         <div className="rounded-2xl border border-[#d9e2ef] bg-white px-8 py-10 shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_24px_60px_rgba(0,0,0,0.28)] sm:px-8">
           <div className="mb-7 text-center">
             <YanmarMark className="mx-auto h-auto w-32" />
-            <h1 className="mt-5 text-2xl font-black text-[#111827] dark:text-white">Assembly System</h1>
+            <h1 className="mt-5 text-2xl font-black text-[#111827] dark:text-white">Smart Engine Assembly System</h1>
             <p className="mt-2 text-sm font-medium text-[#536982] dark:text-gray-300">Sign in to access nut runner dashboard</p>
           </div>
 

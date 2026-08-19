@@ -2,8 +2,8 @@ import SignInPage from "@/auth/SignInPage";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Sign In | Assembly System",
-  description: "Assembly System sign in",
+  title: "Sign In | Smart Engine Assembly System",
+  description: "Smart Engine Assembly System sign in",
 };
 
 export const dynamic = "force-dynamic";

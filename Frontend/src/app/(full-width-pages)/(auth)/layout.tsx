@@ -24,9 +24,9 @@ export default function AuthLayout({
             <div className="w-full max-w-[520px]">
               <div>
                 <h2 className="text-5xl font-extrabold leading-tight tracking-normal text-white">
-                  Assembly
+                  Smart Engine
                   <br />
-                  <span className="text-[#ff2b38]">System</span>
+                  <span className="text-[#ff2b38]">Assembly System</span>
                 </h2>
                 <p className="mt-8 max-w-[420px] text-xl leading-8 text-white/90">
                   Record tightening torque, cycle time, operator, and OK/NG judgement in one dashboard.

@@ -93,3 +93,25 @@ Urutan cepat ketika user minta "run project berkut":
 Jika frontend build gagal dengan `EBUSY .next\standalone`, berarti frontend masih jalan. Jalankan `Stop Project`, lalu build ulang.
 
 Jika login menampilkan `NetworkError when attempting to fetch resource`, biasanya backend belum jalan di port `5241`. Jalankan `Run Backend`, lalu refresh browser.
+
+## Deploy VPS From Windows CMD
+
+Pastikan project sudah ada di VPS, file `.env` sudah dibuat dari `.env.example`, dan remote GitHub Smart Engine Assembly System tersedia. Di project lokal ini remote GitHub bernama `yanmar`.
+
+Jalankan dari folder project Windows:
+
+```cmd
+PullBuildRunVps.cmd root@123.123.123.123 /var/www/assembly-system main
+```
+
+Dengan MQTT worker:
+
+```cmd
+PullBuildRunVps.cmd root@123.123.123.123 /var/www/assembly-system main worker
+```
+
+Jika di VPS remote GitHub bernama `origin`, tambahkan parameter remote:
+
+```cmd
+PullBuildRunVps.cmd root@123.123.123.123 /var/www/assembly-system main worker origin
+```

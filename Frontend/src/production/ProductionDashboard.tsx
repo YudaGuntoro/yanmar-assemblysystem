@@ -560,7 +560,7 @@ export default function ProductionDashboard() {
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700 dark:text-brand-300">PT. Yanmar Diesel Indonesia</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white sm:text-[28px]">Assembly System</h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white sm:text-[28px]">Smart Engine Assembly System</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">Monitor nut runner judgement, OK/NG totals, and tightening records by selected period.</p>
           </div>
           <div className="flex items-end gap-2">

@@ -350,7 +350,7 @@ export default function WorkRecordPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-600">Assembly System</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-600">Smart Engine Assembly System</p>
           <h1 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Work Record</h1>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">

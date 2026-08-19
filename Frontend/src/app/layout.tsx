@@ -7,10 +7,10 @@ import { ToastProvider } from '@/context/ToastContext';
 
 export const metadata: Metadata = {
   title: {
-    default: "Assembly System",
-    template: "%s | Assembly System",
+    default: "Smart Engine Assembly System",
+    template: "%s | Smart Engine Assembly System",
   },
-  description: "Assembly System for PT. Yanmar Diesel Indonesia",
+  description: "Smart Engine Assembly System for PT. Yanmar Diesel Indonesia",
   icons: {
     apple: "/yanmar-icon.svg?v=yanmar",
     icon: "/yanmar-icon.svg?v=yanmar",

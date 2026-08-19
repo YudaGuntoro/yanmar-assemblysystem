@@ -26,8 +26,8 @@ export default function LeaktesterBrand({
       </div>
       {showTitle ? (
         <div className="min-w-0">
-          <p className={`truncate font-extrabold leading-tight ${inverted ? "text-white" : "text-brand-600"} ${titleSize}`}>
-            Assembly System
+          <p className={`max-w-40 font-extrabold leading-tight ${inverted ? "text-white" : "text-brand-600"} ${titleSize}`}>
+            Smart Engine Assembly System
           </p>
           <p className={`truncate font-medium ${inverted ? "text-white/75" : "text-slate-500"} ${subtitleSize}`}>PT. Yanmar Diesel Indonesia</p>
         </div>
