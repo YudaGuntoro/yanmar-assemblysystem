@@ -115,3 +115,21 @@ Jika di VPS remote GitHub bernama `origin`, tambahkan parameter remote:
 ```cmd
 PullBuildRunVps.cmd root@123.123.123.123 /var/www/assembly-system main worker origin
 ```
+
+Clean redeploy: pull dari GitHub, remove container lama, build ulang tanpa cache, lalu up lagi:
+
+```cmd
+RedeployCleanVps.cmd root@123.123.123.123 /var/www/assembly-system main
+```
+
+Clean redeploy dengan MQTT worker:
+
+```cmd
+RedeployCleanVps.cmd root@123.123.123.123 /var/www/assembly-system main worker
+```
+
+Jika di VPS remote GitHub bernama `origin`:
+
+```cmd
+RedeployCleanVps.cmd root@123.123.123.123 /var/www/assembly-system main worker origin
+```
