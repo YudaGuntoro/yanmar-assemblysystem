@@ -1,5 +1,5 @@
 import api, { ApiRequestOptions } from "@/utils/api";
-import { ApiListResponse } from "./ParameterService";
+import type { ApiListResponse } from "./apiTypes";
 
 export type ProcessLogDetail = Record<string, unknown>;
 

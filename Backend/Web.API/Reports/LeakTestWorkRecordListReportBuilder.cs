@@ -32,7 +32,7 @@ public static class LeakTestWorkRecordListReportBuilder
         worksheet.PageSetup.PrintAreas.Add($"B2:M{lastRow}");
 
         workbook.Properties.Title = "Leak Test Work Record List";
-        workbook.Properties.Author = "Leaktester Work Record";
+        workbook.Properties.Author = "Assembly System";
         workbook.Properties.Company = "PT. Yanmar Diesel Indonesia";
         workbook.Properties.Subject = "Leak Test Work Record List Export";
         workbook.Properties.Created = DateTime.Now;

@@ -54,7 +54,7 @@ WHERE pressure.unit_category = 'pressure'
   AND cycle_time.unit_category = 'cycle_time'
   AND cycle_time.unit_symbol = 's'
 ON DUPLICATE KEY UPDATE
-    id = id;
+    id = VALUES(id);
 
 SET @plc_ip_column_exists := (
     SELECT COUNT(*)

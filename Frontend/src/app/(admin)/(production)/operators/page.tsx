@@ -1,8 +1,5 @@
-import OperatorPage from "@/production/OperatorPage";
-import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
-export const metadata: Metadata = { title: "Operator | PT. Yanmar Diesel Indonesia" };
-
-export default function OperatorsRoute() {
-  return <OperatorPage />;
+export default function RemovedOperatorsRoute() {
+  notFound();
 }

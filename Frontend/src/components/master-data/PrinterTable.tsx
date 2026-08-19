@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Badge from "@/components/ui/badge/Badge";
+import ActionIconButton from "@/components/common/ActionIconButton";
 import CreateButton from "@/components/common/CreateButton";
 import DataTable, { DataTableColumn } from "@/components/common/DataTable";
 import { usePrinters } from "@/hooks/usePrinters";
 import PrinterService, { Printer } from "@/services/PrinterService";
 import { useToast } from "@/context/ToastContext";
-import { PencilIcon, TrashBinIcon } from "@/icons";
 import { ConfirmModal } from "@/components/ui/modal";
 import PrinterModal from "./PrinterModal";
 
@@ -166,22 +166,18 @@ export default function PrinterTable() {
         align: "center",
         render: (_, row) => (
           <div className="flex items-center justify-center gap-3">
-            <button
+            <ActionIconButton
+              aria-label={`Edit ${row.name}`}
+              icon="edit"
               onClick={() => handleUpdate(row)}
-              className="text-warning-500 transition-colors hover:text-warning-600 dark:text-warning-400 dark:hover:text-warning-500"
               title="Edit"
-              type="button"
-            >
-              <PencilIcon className="h-5 w-5 fill-current" />
-            </button>
-            <button
+            />
+            <ActionIconButton
+              aria-label={`Delete ${row.name}`}
+              icon="delete"
               onClick={() => handleDeleteClick(row)}
-              className="text-error-500 transition-colors hover:text-error-600 dark:text-error-400 dark:hover:text-error-500"
               title="Delete"
-              type="button"
-            >
-              <TrashBinIcon className="h-5 w-5 fill-current" />
-            </button>
+            />
           </div>
         ),
       },

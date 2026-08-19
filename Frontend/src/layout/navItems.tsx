@@ -3,7 +3,6 @@ import {
   BoxCubeIcon,
   BoltIcon,
   GridIcon,
-  TaskIcon,
 } from "../icons/index";
 
 const SettingsIcon = () => (
@@ -54,21 +53,16 @@ export const navItems: NavItem[] = [
   },
   {
     icon: <BoltIcon />,
-    name: "Leaktester Work Record",
+    name: "Work Record",
     path: "/work-record",
-  },
-  {
-    icon: <TaskIcon />,
-    name: "Form Manual",
-    path: "/form-manual",
   },
   {
     icon: <BoxCubeIcon />,
     name: "Master Data",
     subItems: [
+      { name: "Tool Setting", path: "/workstations" },
+      { name: "Torque Master", path: "/torque-master" },
       { name: "Engine Model", path: "/engine-model" },
-      { name: "Parameter", path: "/parameters" },
-      { name: "Operator", path: "/operators" },
       { name: "User", path: "/users" },
     ],
   },

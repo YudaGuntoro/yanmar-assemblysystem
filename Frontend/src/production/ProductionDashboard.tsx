@@ -101,7 +101,7 @@ export default function ProductionDashboard() {
   const [tablePage, setTablePage] = useState(1);
   const [tablePageSize, setTablePageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
   const [unitSettings, setUnitSettings] = useState<UnitSettings>(() => getUnitSettings());
-  const pressureUnit = unitSettings.pressureUnit.trim() || "MPa";
+  const pressureUnit = unitSettings.pressureUnit.trim() || "N.m";
 
   useEffect(() => {
     let ignore = false;
@@ -150,7 +150,7 @@ export default function ProductionDashboard() {
       setRecords(workRecords);
       setMonthlySummary(monthlyItems);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load the leaktester dashboard.");
+      setError(err instanceof Error ? err.message : "Failed to load the assembly dashboard.");
     } finally {
       setLoading(false);
     }
@@ -450,19 +450,21 @@ export default function ProductionDashboard() {
     },
   ], [monthlySummary]);
   const topNgData = useMemo(() => {
-    const grouped = records.reduce<Record<string, number>>((current, record) => {
+    const grouped = records.reduce<Record<string, { item: string; processNo: number | null; total: number }>>((current, record) => {
       if (record.result !== "NG") return current;
-      const key = record.engine_model || "Unknown Model";
-      current[key] = (current[key] ?? 0) + 1;
+      const itemName = record.item?.trim() || "Unknown Item";
+      const processNo = record.process_no ?? null;
+      const key = `${processNo ?? "none"}|${itemName.toLowerCase()}`;
+      current[key] = current[key] ?? { item: itemName, processNo, total: 0 };
+      current[key].total += 1;
       return current;
     }, {});
-    const items = Object.entries(grouped)
-      .map(([model, total]) => ({ model, total }))
-      .sort((first, second) => second.total - first.total)
+    const items = Object.values(grouped)
+      .sort((first, second) => second.total - first.total || (first.processNo ?? 999999) - (second.processNo ?? 999999) || first.item.localeCompare(second.item))
       .slice(0, 5);
 
     return {
-      categories: items.length ? items.map((item) => item.model) : ["No NG"],
+      categories: items.length ? items.map((item) => `P${item.processNo ?? "-"} - ${item.item}`) : ["No NG"],
       items,
       series: items.length ? items.map((item) => item.total) : [0],
     };
@@ -558,8 +560,8 @@ export default function ProductionDashboard() {
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-700 dark:text-brand-300">PT. Yanmar Diesel Indonesia</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white sm:text-[28px]">Leaktester Work Record</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">Monitor leak test judgement, OK/NG totals, and inspection records by selected period.</p>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white sm:text-[28px]">Assembly System</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">Monitor nut runner judgement, OK/NG totals, and tightening records by selected period.</p>
           </div>
           <div className="flex items-end gap-2">
             <div className="w-[260px] max-w-full">
@@ -644,7 +646,7 @@ export default function ProductionDashboard() {
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white px-5 pt-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6 sm:pt-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Leak Test Judgement Chart</h2>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Nut Runner Judgement Chart</h2>
               <p className="mt-1 text-xs text-slate-400">OK/NG bar chart for {selectedPeriodLabel}.</p>
             </div>
             <Link className="text-sm font-bold text-brand-600 hover:text-brand-700" href="/work-record">Work record -&gt;</Link>
@@ -663,8 +665,8 @@ export default function ProductionDashboard() {
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white px-5 pt-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:px-6 sm:pt-6">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Top 5 Model NG</h2>
-            <p className="mt-1 text-xs text-slate-400">Models with the highest NG judgement count for {selectedPeriodLabel}.</p>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Top 5 Item NG</h2>
+            <p className="mt-1 text-xs text-slate-400">Items with the highest NG judgement count by Process No for {selectedPeriodLabel}.</p>
           </div>
           <div className="mt-4 max-w-full overflow-x-auto custom-scrollbar">
             <div className="min-w-[420px]">
@@ -680,8 +682,9 @@ export default function ProductionDashboard() {
             {topNgData.items.length ? (
               <div className="space-y-2">
                 {topNgData.items.map((item, index) => (
-                  <div className="flex items-center justify-between gap-3 text-sm" key={item.model}>
-                    <span className="min-w-0 truncate font-semibold text-slate-700 dark:text-slate-200">{index + 1}. {item.model}</span>
+                  <div className="flex items-center justify-between gap-3 text-sm" key={`${item.processNo ?? "none"}-${item.item}`}>
+                    <span className="min-w-0 truncate font-semibold text-slate-700 dark:text-slate-200">{index + 1}. {item.item}</span>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200">Process No {item.processNo ?? "-"}</span>
                     <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{item.total} NG</span>
                   </div>
                 ))}
@@ -696,7 +699,7 @@ export default function ProductionDashboard() {
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
           <div>
-            <h2 className="font-bold text-slate-900 dark:text-white">Leak Test Judgement</h2>
+            <h2 className="font-bold text-slate-900 dark:text-white">Nut Runner Judgement</h2>
             <p className="mt-1 text-xs text-slate-400">OK/NG work records for {selectedPeriodLabel}.</p>
           </div>
           <Link className="text-sm font-bold text-brand-600 hover:text-brand-700" href="/work-record">Work record -&gt;</Link>
@@ -706,11 +709,11 @@ export default function ProductionDashboard() {
             <thead className="bg-transparent text-[11px] uppercase tracking-wider text-white">
               <tr className="bg-transparent">
                 <th className="rounded-l-lg bg-brand-500 px-5 py-3">Engine Model</th>
-                <th className="bg-brand-500 px-4 py-3">Engine Number</th>
+                <th className="bg-brand-500 px-4 py-3">Serial No</th>
                 <th className="bg-brand-500 px-4 py-3">Operator Code</th>
                 <th className="bg-brand-500 px-4 py-3">Operator Name</th>
                 <th className="bg-brand-500 px-4 py-3">Date / Time</th>
-                <th className="bg-brand-500 px-4 py-3">Pressure Input ({pressureUnit})</th>
+                <th className="bg-brand-500 px-4 py-3">Torque Actual ({pressureUnit})</th>
                 <th className="rounded-r-lg bg-brand-500 px-5 py-3">Judgement</th>
               </tr>
             </thead>

@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
+using System.Data;
 using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
 using Web.API.Domain.Production;
 using Web.API.Persistence.Context;
 using Web.API.Reports;
@@ -212,6 +215,8 @@ public class LeaktesterController : ApiControllerBase
                 MachineName = request.MachineName.Trim(),
                 OperatorName = string.IsNullOrWhiteSpace(operatorName) ? null : TrimTo(operatorName, 150),
                 ParameterPressure = request.ParameterPressure,
+                ProcessNo = request.ProcessNo ?? request.ProcessNumber,
+                StepNo = request.StepNo ?? request.StepNumber,
                 ChannelNo = string.IsNullOrWhiteSpace(request.ChannelNo) ? null : TrimTo(request.ChannelNo, 20),
                 PressSetUp = request.PressSetUp,
                 PressSetLow = request.PressSetLow,
@@ -289,6 +294,8 @@ public class LeaktesterController : ApiControllerBase
                     : TrimTo(request.MachineName, 150),
                 OperatorName = string.IsNullOrWhiteSpace(request.Operator) ? null : TrimTo(request.Operator, 150),
                 ParameterPressure = parameterPressure,
+                ProcessNo = request.ProcessNo ?? request.ProcessNumber,
+                StepNo = request.StepNo ?? request.StepNumber,
                 ChannelNo = string.IsNullOrWhiteSpace(request.ChannelNo) ? null : TrimTo(request.ChannelNo, 20),
                 PressSetUp = request.PressSetUp,
                 PressSetLow = request.PressSetLow,
@@ -613,48 +620,370 @@ public class LeaktesterController : ApiControllerBase
         }
     }
 
-    [HttpGet("parameters")]
-    public async Task<IActionResult> Parameters(
-        [FromQuery] string? search,
-        [FromQuery(Name = "search_by")] string? searchBy,
-        [FromQuery] string? status)
+    [HttpGet("torque-master")]
+    public async Task<IActionResult> TorqueMaster(
+        [FromQuery(Name = "model_ids")] string? modelIds,
+        [FromQuery(Name = "process_no")] int? processNo,
+        [FromQuery] string? search)
     {
-        await EnsureLeakTestParameterTableAsync();
-
-        var query = _db.LeakTestParameters.AsNoTracking().AsQueryable();
-        var normalizedStatus = status?.Trim().ToLowerInvariant();
-
-        query = normalizedStatus switch
+        try
         {
-            "all" => query,
-            "deleted" => query.Where(x => x.IsDeleted == true),
-            _ => query.Where(x => x.IsDeleted != true)
-        };
+            await EnsureTorqueMasterTablesAsync();
+            await SeedTorqueMasterFromLegacyDatabaseAsync();
 
-        var term = search?.Trim();
-        if (!string.IsNullOrWhiteSpace(term))
-        {
-            var normalizedSearchBy = searchBy?.Trim().ToLowerInvariant();
-            query = normalizedSearchBy switch
+            var selectedModelIds = ParseIdList(modelIds);
+            var models = await ReadTorqueMasterModelsAsync(selectedModelIds);
+            var rows = await ReadTorqueMasterRowsAsync(models, processNo, search);
+
+            return ApiOk(new TorqueMasterResponse
             {
-                "channel_no" => query.Where(x => x.ChannelNo.Contains(term)),
-                "model_parameter" => query.Where(x => x.ModelParameter.Contains(term)),
-                "item_name" => query.Where(x => x.ItemName.Contains(term)),
-                "item_value" => query.Where(x => x.ItemValue.Contains(term)),
-                "machine_names" => query.Where(x => x.MachineNames != null && x.MachineNames.Contains(term)),
-                _ => query.Where(x =>
-                    x.ChannelNo.Contains(term) ||
-                    x.ModelParameter.Contains(term) ||
-                    x.ItemName.Contains(term) ||
-                    x.ItemValue.Contains(term) ||
-                    (x.MachineNames != null && x.MachineNames.Contains(term)))
-            };
+                Models = models,
+                Rows = rows
+            });
         }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
 
-        return ApiOk(await query
-            .OrderBy(x => x.ChannelNo)
-            .ThenBy(x => x.Id)
-            .ToListAsync());
+    [HttpPost("torque-master/import")]
+    public async Task<IActionResult> ImportTorqueMaster([FromForm] IFormFile file)
+    {
+        try
+        {
+            await EnsureTorqueMasterTablesAsync();
+
+            if (file is null || file.Length == 0)
+            {
+                throw new ArgumentException("Excel file is required.");
+            }
+
+            var result = await ImportTorqueMasterWorkbookAsync(file);
+            return ApiOk(result, "Torque master imported successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpPut("torque-master/rows/{id:long}")]
+    public async Task<IActionResult> UpdateTorqueMasterRow(long id, [FromBody] UpdateTorqueMasterRowRequest request)
+    {
+        try
+        {
+            await EnsureTorqueMasterTablesAsync();
+
+            if (request.ProcessNo.HasValue && request.ProcessNo.Value < 0)
+            {
+                throw new ArgumentException("Process no must be zero or greater.");
+            }
+
+            if (request.StepNo.HasValue && request.StepNo.Value < 0)
+            {
+                throw new ArgumentException("Step number must be zero or greater.");
+            }
+            if (request.Min.HasValue && request.Max.HasValue && request.Min > request.Max)
+            {
+                throw new ArgumentException("Minimum cannot be greater than maximum.");
+            }
+
+            int? toolIndex = string.IsNullOrWhiteSpace(request.ToolType) ? null : request.ToolType.Trim() switch
+            {
+                "Nut Runner" => 1,
+                _ => 3
+            };
+
+            var updated = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE assembly_torque_standard_rows
+SET
+    process_no = COALESCE({request.ProcessNo}, process_no),
+    step_no = COALESCE({request.StepNo}, step_no),
+    item = COALESCE({request.Item}, item),
+    tool_index = COALESCE({toolIndex}, tool_index),
+    tool_category = COALESCE({request.ToolType}, tool_category),
+    item_check = COALESCE({request.ItemCheck}, item_check),
+    nut_spec = COALESCE({request.NutSpec}, nut_spec),
+    nut_usage = COALESCE({request.NutUsage}, nut_usage),
+    tool = COALESCE({request.Tool}, tool),
+    model_page = COALESCE({request.ModelPage}, model_page),
+    page = COALESCE({request.Page}, page),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = {id}
+    AND is_deleted != 1");
+
+            if (updated == 0)
+            {
+                return ApiNotFound("Torque master row was not found.");
+            }
+
+            if (request.ModelId.HasValue && request.ModelId.Value > 0)
+            {
+                await UpsertTorqueStandardSpecAsync(id, request.ModelId.Value, request.Min, request.Max, request.Unit);
+            }
+
+            return ApiOk(new { id }, "Torque master row updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpDelete("torque-master/rows/{id:long}")]
+    public async Task<IActionResult> DeleteTorqueMasterRow(long id)
+    {
+        try
+        {
+            await EnsureTorqueMasterTablesAsync();
+            var updated = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE assembly_torque_standard_rows
+SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP
+WHERE id = {id} AND is_deleted != 1");
+            if (updated == 0) return ApiNotFound("Torque master row was not found.");
+            return ApiOk(new { id }, "Torque master row deleted successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpPost("torque-master/rows")]
+    public async Task<IActionResult> CreateTorqueMasterRow([FromBody] CreateTorqueMasterRowRequest request)
+    {
+        try
+        {
+            await EnsureTorqueMasterTablesAsync();
+            if (request.ModelId <= 0) throw new ArgumentException("Engine model is required.");
+            if (string.IsNullOrWhiteSpace(request.Item)) throw new ArgumentException("Item is required.");
+            if (request.ProcessNo < 0 || request.StepNo < 0) throw new ArgumentException("Process and step number must be zero or greater.");
+            if (request.Min.HasValue && request.Max.HasValue && request.Min > request.Max) throw new ArgumentException("Minimum cannot be greater than maximum.");
+
+            var modelName = Convert.ToString(await ExecuteScalarAsync("SELECT model_name FROM assembly_torque_models WHERE id = @id AND is_deleted != 1 LIMIT 1", ("@id", request.ModelId)), CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(modelName)) return ApiNotFound("Engine model was not found.");
+
+            var toolIndex = request.ToolType.Trim() switch
+            {
+                "Nut Runner" => 1,
+                "Torque Wrench" => 2,
+                _ => 3
+            };
+            var rowKey = Guid.NewGuid().ToString("N");
+            var rowId = await UpsertTorqueStandardRowAsync(rowKey, request.ProcessNo, request.StepNo, request.Item, toolIndex, request.ToolType, request.ItemCheck, request.NutSpec, request.NutUsage, request.Tool, null, null, request.ModelPage ?? modelName, request.Page);
+            await UpsertTorqueStandardSpecAsync(rowId, request.ModelId, request.Min, request.Max, request.Unit);
+            return ApiCreated(new { id = rowId }, "Torque master row created successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpGet("assembly-workstations")]
+    public async Task<IActionResult> AssemblyWorkstations([FromQuery] string? status)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+
+            var normalizedStatus = status?.Trim().ToLowerInvariant();
+            var query = _db.AssemblyWorkstations
+                .AsNoTracking()
+                .Include(x => x.Tools)
+                .AsQueryable();
+
+            query = normalizedStatus switch
+            {
+                "all" => query,
+                "deleted" => query.Where(x => x.IsDeleted == true),
+                _ => query.Where(x => x.IsDeleted != true)
+            };
+
+            var items = await query
+                .OrderBy(x => x.WorkstationNo)
+                .ThenBy(x => x.WorkstationCode)
+                .ToListAsync();
+
+            foreach (var workstation in items)
+            {
+                var tools = normalizedStatus == "all"
+                    ? workstation.Tools
+                    : workstation.Tools.Where(x => normalizedStatus == "deleted" ? x.IsDeleted == true : x.IsDeleted != true).ToList();
+
+                workstation.Tools = tools
+                    .OrderBy(x => x.SequenceNo)
+                    .ThenBy(x => x.ToolCode)
+                    .ToList();
+            }
+
+            return ApiOk(items);
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpPost("assembly-workstations")]
+    public async Task<IActionResult> CreateAssemblyWorkstation([FromBody] CreateAssemblyWorkstationRequest request)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+
+            if (string.IsNullOrWhiteSpace(request.WorkstationCode) ||
+                string.IsNullOrWhiteSpace(request.WorkstationName) ||
+                request.WorkstationNo <= 0)
+            {
+                throw new ArgumentException("Workstation code, name, and number are required.");
+            }
+
+            var item = new AssemblyWorkstation
+            {
+                WorkstationCode = TrimTo(request.WorkstationCode.Trim(), 50),
+                WorkstationName = TrimTo(request.WorkstationName.Trim(), 120),
+                WorkstationNo = request.WorkstationNo,
+                Description = string.IsNullOrWhiteSpace(request.Description) ? null : TrimTo(request.Description.Trim(), 255),
+                IsDeleted = request.IsDeleted == true,
+                CreatedAt = DateTime.Now,
+                UpdatedAt = DateTime.Now
+            };
+
+            _db.AssemblyWorkstations.Add(item);
+            await _db.SaveChangesAsync();
+            return ApiCreated(item, "Workstation saved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpPut("assembly-workstations/{id:int}")]
+    public async Task<IActionResult> UpdateAssemblyWorkstation(int id, [FromBody] CreateAssemblyWorkstationRequest request)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+
+            var item = await _db.AssemblyWorkstations.FirstOrDefaultAsync(x => x.Id == id);
+            if (item is null)
+            {
+                return ApiNotFound("Workstation was not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.WorkstationCode) ||
+                string.IsNullOrWhiteSpace(request.WorkstationName) ||
+                request.WorkstationNo <= 0)
+            {
+                throw new ArgumentException("Workstation code, name, and number are required.");
+            }
+
+            item.WorkstationCode = TrimTo(request.WorkstationCode.Trim(), 50);
+            item.WorkstationName = TrimTo(request.WorkstationName.Trim(), 120);
+            item.WorkstationNo = request.WorkstationNo;
+            item.Description = string.IsNullOrWhiteSpace(request.Description) ? null : TrimTo(request.Description.Trim(), 255);
+            item.IsDeleted = request.IsDeleted == true;
+            item.UpdatedAt = DateTime.Now;
+
+            await _db.SaveChangesAsync();
+            return ApiOk(item, "Workstation updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpDelete("assembly-workstations/{id:int}")]
+    public async Task<IActionResult> DeleteAssemblyWorkstation(int id)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+
+            var item = await _db.AssemblyWorkstations.FirstOrDefaultAsync(x => x.Id == id);
+            if (item is null)
+            {
+                return ApiNotFound("Workstation was not found.");
+            }
+
+            item.IsDeleted = true;
+            item.UpdatedAt = DateTime.Now;
+            await _db.SaveChangesAsync();
+            return ApiOk(item, "Workstation deleted successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpPost("assembly-tools")]
+    public async Task<IActionResult> CreateAssemblyTool([FromBody] CreateAssemblyToolRequest request)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+            var item = await BuildAssemblyToolAsync(new AssemblyTool(), request);
+            _db.AssemblyTools.Add(item);
+            await _db.SaveChangesAsync();
+            return ApiCreated(item, "Tool saved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpPut("assembly-tools/{id:int}")]
+    public async Task<IActionResult> UpdateAssemblyTool(int id, [FromBody] CreateAssemblyToolRequest request)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+
+            var item = await _db.AssemblyTools.FirstOrDefaultAsync(x => x.Id == id);
+            if (item is null)
+            {
+                return ApiNotFound("Tool was not found.");
+            }
+
+            await BuildAssemblyToolAsync(item, request);
+            item.UpdatedAt = DateTime.Now;
+            await _db.SaveChangesAsync();
+            return ApiOk(item, "Tool updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
+    }
+
+    [HttpDelete("assembly-tools/{id:int}")]
+    public async Task<IActionResult> DeleteAssemblyTool(int id)
+    {
+        try
+        {
+            await EnsureAssemblyWorkstationMasterTablesAsync();
+
+            var item = await _db.AssemblyTools.FirstOrDefaultAsync(x => x.Id == id);
+            if (item is null)
+            {
+                return ApiNotFound("Tool was not found.");
+            }
+
+            item.IsDeleted = true;
+            item.UpdatedAt = DateTime.Now;
+            await _db.SaveChangesAsync();
+            return ApiOk(item, "Tool deleted successfully.");
+        }
+        catch (Exception ex)
+        {
+            return ApiBadRequest(ex);
+        }
     }
 
     [HttpGet("judgements")]
@@ -715,189 +1044,6 @@ public class LeaktesterController : ApiControllerBase
 
             await _db.SaveChangesAsync();
             return ApiOk(item, "Judgement updated successfully.");
-        }
-        catch (Exception ex)
-        {
-            return ApiBadRequest(ex);
-        }
-    }
-
-    [HttpPost("parameters")]
-    public async Task<IActionResult> CreateParameter([FromBody] CreateLeakTestParameterRequest request)
-    {
-        try
-        {
-            await EnsureLeakTestParameterTableAsync();
-
-            if (string.IsNullOrWhiteSpace(request.ChannelNo))
-            {
-                throw new ArgumentException("Channel no is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ModelParameter))
-            {
-                throw new ArgumentException("Model parameter is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ItemName))
-            {
-                throw new ArgumentException("Item name is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ItemValue))
-            {
-                throw new ArgumentException("Value is required.");
-            }
-
-            var item = new LeakTestParameter
-            {
-                ChannelNo = TrimTo(request.ChannelNo, 20),
-                ModelParameter = TrimTo(request.ModelParameter, 150),
-                ItemName = TrimTo(request.ItemName, 120),
-                ItemValue = TrimTo(request.ItemValue, 80),
-                MachineNames = string.IsNullOrWhiteSpace(request.MachineNames) ? null : TrimTo(request.MachineNames, 1000),
-                IsDeleted = request.IsDeleted ?? false,
-                CreatedAt = DateTime.Now,
-                UpdatedAt = DateTime.Now
-            };
-
-            _db.LeakTestParameters.Add(item);
-            await _db.SaveChangesAsync();
-            return ApiCreated(item, "Parameter created successfully.");
-        }
-        catch (Exception ex)
-        {
-            return ApiBadRequest(ex);
-        }
-    }
-
-    [HttpPut("parameters/{id:int}")]
-    public async Task<IActionResult> UpdateParameter(int id, [FromBody] CreateLeakTestParameterRequest request)
-    {
-        try
-        {
-            await EnsureLeakTestParameterTableAsync();
-
-            var item = await _db.LeakTestParameters.FirstOrDefaultAsync(x => x.Id == id);
-            if (item is null)
-            {
-                return ApiNotFound("Parameter was not found.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ChannelNo))
-            {
-                throw new ArgumentException("Channel no is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ModelParameter))
-            {
-                throw new ArgumentException("Model parameter is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ItemName))
-            {
-                throw new ArgumentException("Item name is required.");
-            }
-
-            if (string.IsNullOrWhiteSpace(request.ItemValue))
-            {
-                throw new ArgumentException("Value is required.");
-            }
-
-            item.ChannelNo = TrimTo(request.ChannelNo, 20);
-            item.ModelParameter = TrimTo(request.ModelParameter, 150);
-            item.ItemName = TrimTo(request.ItemName, 120);
-            item.ItemValue = TrimTo(request.ItemValue, 80);
-            item.MachineNames = string.IsNullOrWhiteSpace(request.MachineNames) ? null : TrimTo(request.MachineNames, 1000);
-            item.IsDeleted = request.IsDeleted ?? false;
-            item.UpdatedAt = DateTime.Now;
-
-            await _db.SaveChangesAsync();
-            return ApiOk(item, "Parameter updated successfully.");
-        }
-        catch (Exception ex)
-        {
-            return ApiBadRequest(ex);
-        }
-    }
-
-    [HttpPost("parameters/import")]
-    [RequestSizeLimit(10_000_000)]
-    public async Task<IActionResult> ImportParameters([FromForm] IFormFile? file)
-    {
-        try
-        {
-            await EnsureLeakTestParameterTableAsync();
-
-            if (file is null || file.Length <= 0)
-            {
-                throw new ArgumentException("Excel file is required.");
-            }
-
-            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (extension is not ".xlsx" and not ".xlsm")
-            {
-                throw new ArgumentException("Only .xlsx and .xlsm Excel files are supported.");
-            }
-
-            var rows = ReadParameterRowsFromExcel(file);
-            if (rows.Count == 0)
-            {
-                throw new ArgumentException("No parameter rows were found in the Excel file.");
-            }
-
-            var existingRows = await _db.LeakTestParameters.ToListAsync();
-            var existingMap = existingRows.ToDictionary(
-                x => ParameterKey(x.ChannelNo, x.ItemName),
-                x => x);
-
-            var imported = 0;
-            var updated = 0;
-            var skipped = 0;
-            var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var row in rows)
-            {
-                var key = ParameterKey(row.ChannelNo, row.ItemName);
-                if (!seenKeys.Add(key))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                if (existingMap.TryGetValue(key, out var existing))
-                {
-                    existing.ModelParameter = row.ModelParameter;
-                    existing.ItemValue = row.ItemValue;
-                    existing.MachineNames = row.MachineNames;
-                    existing.IsDeleted = false;
-                    existing.UpdatedAt = DateTime.Now;
-                    updated++;
-                    continue;
-                }
-
-                _db.LeakTestParameters.Add(new LeakTestParameter
-                {
-                    ChannelNo = row.ChannelNo,
-                    ModelParameter = row.ModelParameter,
-                    ItemName = row.ItemName,
-                    ItemValue = row.ItemValue,
-                    MachineNames = row.MachineNames,
-                    IsDeleted = false,
-                    CreatedAt = DateTime.Now,
-                    UpdatedAt = DateTime.Now
-                });
-                imported++;
-            }
-
-            await _db.SaveChangesAsync();
-            return ApiOk(new LeakTestParameterImportResult
-            {
-                Imported = imported,
-                Updated = updated,
-                Skipped = skipped,
-                Channels = rows.Select(x => x.ChannelNo).Distinct(StringComparer.OrdinalIgnoreCase).Count()
-            }, "Parameter Excel imported successfully.");
         }
         catch (Exception ex)
         {
@@ -1105,7 +1251,7 @@ public class LeaktesterController : ApiControllerBase
                 .AnyAsync(x => x.EngineModelId == id);
             if (hasWorkRecord)
             {
-                throw new InvalidOperationException("Tidak bisa dihapus, karena ada data di Leaktester Work Record.");
+                throw new InvalidOperationException("Tidak bisa dihapus, karena ada data di Nut Runner Work Record.");
             }
 
             item.IsDeleted = true;
@@ -1192,6 +1338,14 @@ public class LeaktesterController : ApiControllerBase
             "leak_test_work_records",
             "channel_no",
             "ALTER TABLE leak_test_work_records ADD COLUMN channel_no VARCHAR(20) NULL AFTER parameter_pressure");
+        await EnsureColumnAsync(
+            "leak_test_work_records",
+            "process_no",
+            "ALTER TABLE leak_test_work_records ADD COLUMN process_no INT NULL AFTER parameter_pressure");
+        await EnsureColumnAsync(
+            "leak_test_work_records",
+            "step_no",
+            "ALTER TABLE leak_test_work_records ADD COLUMN step_no INT NULL AFTER process_no");
         await EnsureColumnAsync(
             "leak_test_work_records",
             "press_set_up",
@@ -1391,6 +1545,27 @@ DEALLOCATE PREPARE stmt;");
             .SingleAsync();
 
         if (exists == 0)
+        {
+            await _db.Database.ExecuteSqlRawAsync(alterSql);
+        }
+    }
+
+    private async Task EnsureColumnAbsentAsync(string tableName, string columnName, string alterSql)
+    {
+        var exists = await _db.Database
+            .SqlQueryRaw<int>(
+                """
+                SELECT COUNT(*) AS Value
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = {0}
+                  AND COLUMN_NAME = {1}
+                """,
+                tableName,
+                columnName)
+            .SingleAsync();
+
+        if (exists > 0)
         {
             await _db.Database.ExecuteSqlRawAsync(alterSql);
         }
@@ -1636,19 +1811,118 @@ DEALLOCATE PREPARE stmt;");
 
         await HydrateWorkRecordJudgementsAsync(records);
         await HydrateWorkRecordOperatorsAsync(records);
+        await HydrateWorkRecordTorqueMasterItemsAsync(records);
 
-        var parameters = await GetActiveLeakTestParametersAsync();
         foreach (var record in records)
         {
-            var context = FindParameterContext(parameters, record.EngineModelName);
             record.BarcodeScan = FirstText(record.BarcodeScan, BuildBarcodeScan(record.EngineModelName, record.EngineNumber));
-            record.ParameterChannelNo = context?.ChannelNo ?? FirstText(record.ChannelNo);
-            record.ParameterStandard = context?.Standard ?? FormatNormalizedPressure(record.ParameterPressure);
-            record.ParameterMin = FirstText(context?.Min, record.PressSetLow.HasValue ? FormatNormalizedPressure(record.PressSetLow.Value) : null);
-            record.ParameterMax = FirstText(context?.Max, record.PressSetUp.HasValue ? FormatNormalizedPressure(record.PressSetUp.Value) : null);
-            record.ParameterLimit = context?.Limit ?? FormatHmiPressureLimit(record.PressSetLow, record.PressSetUp);
+            record.ParameterChannelNo = FirstText(record.ChannelNo);
+            record.ParameterStandard = FormatNormalizedPressure(record.ParameterPressure);
+            record.ParameterMin = record.PressSetLow.HasValue ? FormatNormalizedPressure(record.PressSetLow.Value) : null;
+            record.ParameterMax = record.PressSetUp.HasValue ? FormatNormalizedPressure(record.PressSetUp.Value) : null;
+            record.ParameterLimit = FormatHmiPressureLimit(record.PressSetLow, record.PressSetUp);
             record.Result = EvaluateWorkRecordResult(record);
         }
+    }
+
+    private async Task HydrateWorkRecordTorqueMasterItemsAsync(IReadOnlyCollection<LeakTestWorkRecord> records)
+    {
+        var processStepKeys = records
+            .Where(x => x.ProcessNo.HasValue && x.StepNo.HasValue)
+            .Select(x => (ProcessNo: x.ProcessNo!.Value, StepNo: x.StepNo!.Value))
+            .Distinct()
+            .ToList();
+        if (processStepKeys.Count == 0)
+        {
+            return;
+        }
+
+        await EnsureTorqueMasterTablesAsync();
+
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        var filters = new List<string>();
+        for (var index = 0; index < processStepKeys.Count; index++)
+        {
+            var processParameter = command.CreateParameter();
+            processParameter.ParameterName = $"@process_no_{index}";
+            processParameter.Value = processStepKeys[index].ProcessNo;
+            command.Parameters.Add(processParameter);
+
+            var stepParameter = command.CreateParameter();
+            stepParameter.ParameterName = $"@step_no_{index}";
+            stepParameter.Value = processStepKeys[index].StepNo;
+            command.Parameters.Add(stepParameter);
+
+            filters.Add($"(rows_master.process_no = @process_no_{index} AND rows_master.step_no = @step_no_{index})");
+        }
+
+        command.CommandText = $@"
+SELECT
+    rows_master.process_no,
+    rows_master.step_no,
+    rows_master.item,
+    torque_models.model_name
+FROM assembly_torque_standard_rows rows_master
+LEFT JOIN assembly_torque_standard_specs specs
+    ON specs.standard_row_id = rows_master.id
+LEFT JOIN assembly_torque_models torque_models
+    ON torque_models.id = specs.torque_model_id
+    AND torque_models.is_deleted != 1
+WHERE rows_master.is_deleted != 1
+  AND ({string.Join(" OR ", filters)})
+ORDER BY
+    rows_master.process_no,
+    rows_master.step_no,
+    CASE WHEN torque_models.model_name IS NULL THEN 1 ELSE 0 END,
+    rows_master.item
+LIMIT 300";
+
+        var exactItems = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var fallbackItems = new Dictionary<(int ProcessNo, int StepNo), string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2))
+            {
+                continue;
+            }
+
+            var processNo = reader.GetInt32(0);
+            var stepNo = reader.GetInt32(1);
+            var item = reader.GetString(2);
+            var modelName = reader.IsDBNull(3) ? null : reader.GetString(3);
+
+            fallbackItems.TryAdd((processNo, stepNo), item);
+            if (!string.IsNullOrWhiteSpace(modelName))
+            {
+                exactItems.TryAdd(BuildWorkRecordTorqueItemKey(modelName, processNo, stepNo), item);
+            }
+        }
+
+        foreach (var record in records)
+        {
+            if (!record.ProcessNo.HasValue || !record.StepNo.HasValue)
+            {
+                continue;
+            }
+
+            var processNo = record.ProcessNo.Value;
+            var stepNo = record.StepNo.Value;
+            record.Item = exactItems.TryGetValue(BuildWorkRecordTorqueItemKey(record.EngineModelName, processNo, stepNo), out var exactItem)
+                ? exactItem
+                : fallbackItems.GetValueOrDefault((processNo, stepNo));
+        }
+    }
+
+    private static string BuildWorkRecordTorqueItemKey(string modelName, int processNo, int stepNo)
+    {
+        return string.Join("|", modelName.Trim().ToUpperInvariant(), processNo, stepNo);
     }
 
     private static IEnumerable<LeakTestWorkRecord> FilterWorkRecordsByResult(
@@ -1806,109 +2080,10 @@ DEALLOCATE PREPARE stmt;");
             return;
         }
 
-        var parameters = await GetActiveLeakTestParametersAsync();
         foreach (var record in records)
         {
-            var context = FindParameterContext(parameters, record.EngineModelName);
-            record.ParameterChannelNo = context?.ChannelNo;
-            record.ParameterStandard = context?.Standard;
-            record.ParameterMin = context?.Min;
-            record.ParameterMax = context?.Max;
-            record.ParameterLimit = context?.Limit;
+            record.ParameterStandard = FormatNormalizedPressure(record.ParameterPressure);
         }
-    }
-
-    private async Task<List<LeakTestParameter>> GetActiveLeakTestParametersAsync()
-    {
-        await EnsureLeakTestParameterTableAsync();
-        return await _db.LeakTestParameters
-            .AsNoTracking()
-            .Where(x => x.IsDeleted != true)
-            .ToListAsync();
-    }
-
-    private static LeakTestParameterContext? FindParameterContext(
-        IReadOnlyList<LeakTestParameter> parameters,
-        string engineModelName)
-    {
-        var modelKey = NormalizeModelKey(engineModelName);
-        if (string.IsNullOrWhiteSpace(modelKey) || parameters.Count == 0)
-        {
-            return null;
-        }
-
-        var groups = parameters
-            .Where(x => !string.IsNullOrWhiteSpace(x.ChannelNo))
-            .GroupBy(x => x.ChannelNo.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var machineMatch = groups.FirstOrDefault(group =>
-            group.Any(parameter => MachineNamesContainModel(parameter.MachineNames, modelKey)));
-        if (machineMatch is not null)
-        {
-            return BuildParameterContext(machineMatch);
-        }
-
-        var modelParameterMatch = groups
-            .Select(group => new
-            {
-                Group = group,
-                Score = ModelParameterScore(group, modelKey)
-            })
-            .Where(item => item.Score > 0)
-            .OrderByDescending(item => item.Score)
-            .FirstOrDefault();
-
-        return modelParameterMatch is null
-            ? null
-            : BuildParameterContext(modelParameterMatch.Group);
-    }
-
-    private static LeakTestParameterContext BuildParameterContext(IEnumerable<LeakTestParameter> parameters)
-    {
-        var rows = parameters.ToList();
-        var channelNo = rows.First().ChannelNo.Trim();
-        var standard = FindParameterValue(rows, "pressure setting");
-        var min = FindParameterValue(rows, "lower press limit");
-        var max = FindParameterValue(rows, "upper press limit");
-
-        return new LeakTestParameterContext(
-            channelNo,
-            standard,
-            min,
-            max,
-            FormatParameterLimit(min, max));
-    }
-
-    private static string? FindParameterValue(IEnumerable<LeakTestParameter> parameters, string itemNameTerm)
-    {
-        return parameters
-            .FirstOrDefault(x => NormalizeSpaces(x.ItemName).Contains(itemNameTerm, StringComparison.OrdinalIgnoreCase))
-            ?.ItemValue;
-    }
-
-    private static bool MachineNamesContainModel(string? machineNames, string modelKey)
-    {
-        if (string.IsNullOrWhiteSpace(machineNames))
-        {
-            return false;
-        }
-
-        return machineNames
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(NormalizeModelKey)
-            .Any(machineKey => machineKey == modelKey);
-    }
-
-    private static int ModelParameterScore(IEnumerable<LeakTestParameter> parameters, string modelKey)
-    {
-        return parameters
-            .SelectMany(parameter => parameter.ModelParameter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            .Select(NormalizeModelKey)
-            .Where(parameterKey => !string.IsNullOrWhiteSpace(parameterKey) && modelKey.StartsWith(parameterKey, StringComparison.Ordinal))
-            .Select(parameterKey => parameterKey.Length)
-            .DefaultIfEmpty(0)
-            .Max();
     }
 
     private static string NormalizeModelKey(string? value)
@@ -2100,25 +2275,6 @@ DEALLOCATE PREPARE stmt;");
         return query;
     }
 
-    private async Task EnsureLeakTestParameterTableAsync()
-    {
-        await _db.Database.ExecuteSqlRawAsync(@"
-CREATE TABLE IF NOT EXISTS leak_test_parameters (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    channel_no VARCHAR(20) NOT NULL,
-    model_parameter VARCHAR(150) NOT NULL,
-    item_name VARCHAR(120) NOT NULL,
-    item_value VARCHAR(80) NOT NULL,
-    machine_names VARCHAR(1000) NULL,
-    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_leak_test_parameters_channel_item (channel_no, item_name),
-    KEY ix_leak_test_parameters_channel_no (channel_no),
-    KEY ix_leak_test_parameters_model_parameter (model_parameter)
-)");
-    }
-
     private async Task EnsureLeakTestJudgementTableAsync()
     {
         await _db.Database.ExecuteSqlRawAsync(@"
@@ -2211,71 +2367,6 @@ SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP
 WHERE judgement_code > 20");
     }
 
-    private static List<ParameterExcelRow> ReadParameterRowsFromExcel(IFormFile file)
-    {
-        using var stream = file.OpenReadStream();
-        using var workbook = new XLWorkbook(stream);
-        var worksheet = workbook.Worksheets.First();
-        var lastRow = worksheet.LastRowUsed()?.RowNumber() ?? 0;
-        var rows = new List<ParameterExcelRow>();
-        string? currentChannelNo = null;
-        string? currentModelParameter = null;
-        string? currentMachineNames = null;
-
-        for (var rowNumber = 1; rowNumber <= lastRow; rowNumber++)
-        {
-            var channelNo = CellText(worksheet, rowNumber, 1);
-            var modelParameter = CellText(worksheet, rowNumber, 2);
-            var itemName = CellText(worksheet, rowNumber, 3);
-            var itemValue = CellText(worksheet, rowNumber, 4);
-
-            if (IsHeaderCell(channelNo) || IsHeaderCell(itemName))
-            {
-                continue;
-            }
-
-            if (!string.IsNullOrWhiteSpace(channelNo))
-            {
-                currentChannelNo = channelNo;
-                currentModelParameter = modelParameter;
-                currentMachineNames = ReadMachineNames(worksheet, rowNumber);
-            }
-
-            if (string.IsNullOrWhiteSpace(currentChannelNo) ||
-                string.IsNullOrWhiteSpace(itemName) ||
-                string.IsNullOrWhiteSpace(itemValue))
-            {
-                continue;
-            }
-
-            rows.Add(new ParameterExcelRow(
-                TrimTo(currentChannelNo, 20),
-                TrimTo(currentModelParameter ?? string.Empty, 150),
-                TrimTo(itemName, 120),
-                TrimTo(itemValue, 80),
-                string.IsNullOrWhiteSpace(currentMachineNames) ? null : TrimTo(currentMachineNames, 1000)));
-        }
-
-        return rows;
-    }
-
-    private static string ReadMachineNames(IXLWorksheet worksheet, int rowNumber)
-    {
-        var lastColumn = worksheet.Row(rowNumber).LastCellUsed()?.Address.ColumnNumber ?? 5;
-        var names = new List<string>();
-
-        for (var column = 5; column <= lastColumn; column++)
-        {
-            var value = CellText(worksheet, rowNumber, column);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                names.Add(value);
-            }
-        }
-
-        return string.Join(", ", names);
-    }
-
     private static string CellText(IXLWorksheet worksheet, int rowNumber, int columnNumber)
     {
         var value = worksheet.Cell(rowNumber, columnNumber).GetFormattedString();
@@ -2289,36 +2380,11 @@ WHERE judgement_code > 20");
             : string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 
-    private static bool IsHeaderCell(string value)
-    {
-        return value.Equals("CHANNEL NO", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("ITEM NAME", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string ParameterKey(string channelNo, string itemName)
-    {
-        return $"{channelNo.Trim().ToUpperInvariant()}|{itemName.Trim().ToUpperInvariant()}";
-    }
-
     private static string TrimTo(string value, int maxLength)
     {
         var trimmed = value.Trim();
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
-
-    private sealed record ParameterExcelRow(
-        string ChannelNo,
-        string ModelParameter,
-        string ItemName,
-        string ItemValue,
-        string? MachineNames);
-
-    private sealed record LeakTestParameterContext(
-        string ChannelNo,
-        string? Standard,
-        string? Min,
-        string? Max,
-        string? Limit);
 
     private static (string? EngineModel, string? EngineNumber) ParseBarcodeScan(string? barcodeScan)
     {
@@ -2350,6 +2416,888 @@ WHERE judgement_code > 20");
     {
         var trimmed = checkTime.Trim();
         return trimmed.Length == 5 ? $"{trimmed}:00" : trimmed;
+    }
+
+    private async Task<AssemblyTool> BuildAssemblyToolAsync(AssemblyTool item, CreateAssemblyToolRequest request)
+    {
+        if (request.WorkstationId <= 0 ||
+            string.IsNullOrWhiteSpace(request.ToolCode) ||
+            string.IsNullOrWhiteSpace(request.ToolName) ||
+            string.IsNullOrWhiteSpace(request.NutSize))
+        {
+            throw new ArgumentException("Workstation, tool code, tool name, and nut size are required.");
+        }
+
+        if (request.TorqueMin > request.TorqueStandard || request.TorqueStandard > request.TorqueMax)
+        {
+            throw new ArgumentException("Torque standard must be between torque min and torque max.");
+        }
+
+        var workstationExists = await _db.AssemblyWorkstations.AnyAsync(x => x.Id == request.WorkstationId && x.IsDeleted != true);
+        if (!workstationExists)
+        {
+            throw new ArgumentException("Workstation was not found or is inactive.");
+        }
+
+        item.WorkstationId = request.WorkstationId;
+        item.ToolCode = TrimTo(request.ToolCode.Trim(), 50);
+        item.ToolName = TrimTo(request.ToolName.Trim(), 120);
+        item.NutSize = TrimTo(request.NutSize.Trim(), 40);
+        item.ProgramNo = request.ProgramNo;
+        item.TorqueStandard = request.TorqueStandard;
+        item.TorqueMin = request.TorqueMin;
+        item.TorqueMax = request.TorqueMax;
+        item.Unit = string.IsNullOrWhiteSpace(request.Unit) ? "N.m" : TrimTo(request.Unit.Trim(), 20);
+        item.SequenceNo = request.SequenceNo;
+        item.IsDeleted = request.IsDeleted == true;
+
+        if (item.Id == 0)
+        {
+            item.CreatedAt = DateTime.Now;
+            item.UpdatedAt = DateTime.Now;
+        }
+
+        return item;
+    }
+
+    private async Task EnsureTorqueMasterTablesAsync()
+    {
+        await _db.Database.ExecuteSqlRawAsync(@"
+CREATE TABLE IF NOT EXISTS assembly_torque_models (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    legacy_model_id INT NULL,
+    model_name VARCHAR(80) NOT NULL,
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assembly_torque_models_name (model_name),
+    KEY ix_assembly_torque_models_legacy_id (legacy_model_id)
+)");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+CREATE TABLE IF NOT EXISTS assembly_torque_tool_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_name VARCHAR(40) NOT NULL,
+    display_order INT NOT NULL DEFAULT 0,
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assembly_torque_tool_categories_name (category_name)
+)");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+INSERT INTO assembly_torque_tool_categories (category_name, display_order, is_deleted)
+VALUES
+    ('Torque Wrench', 1, 0),
+    ('Nut Runner', 2, 0),
+    ('Visual Inspect', 3, 0)
+ON DUPLICATE KEY UPDATE
+    display_order = VALUES(display_order),
+    is_deleted = 0,
+    updated_at = CURRENT_TIMESTAMP");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+CREATE TABLE IF NOT EXISTS assembly_torque_standard_rows (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    row_key CHAR(32) NOT NULL,
+    process_no INT NULL,
+    step_no INT NULL,
+    item VARCHAR(200) NULL,
+    tool_index INT NULL,
+    tool_category VARCHAR(40) NOT NULL DEFAULT 'Visual Inspect',
+    item_check VARCHAR(200) NULL,
+    nut_spec VARCHAR(80) NULL,
+    nut_usage INT NULL,
+    tool INT NULL,
+    sub_tool INT NULL,
+    work_type VARCHAR(10) NULL,
+    model_page VARCHAR(40) NULL,
+    page INT NULL,
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assembly_torque_standard_rows_key (row_key),
+    KEY ix_assembly_torque_standard_rows_process_step (process_no, step_no),
+    KEY ix_assembly_torque_standard_rows_item (item)
+)");
+
+        await EnsureColumnAsync(
+            "assembly_torque_standard_rows",
+            "tool_category",
+            "ALTER TABLE assembly_torque_standard_rows ADD COLUMN tool_category VARCHAR(40) NOT NULL DEFAULT 'Visual Inspect' AFTER tool_index");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+UPDATE assembly_torque_standard_rows
+SET tool_category = CASE
+    WHEN tool_index = 1 THEN 'Nut Runner'
+    WHEN tool_index = 2 THEN 'Torque Wrench'
+    ELSE 'Visual Inspect'
+END
+WHERE tool_category IS NULL
+    OR tool_category = ''
+    OR tool_category = 'No Use'
+    OR tool_category NOT IN ('Torque Wrench', 'Nut Runner', 'Visual Inspect')
+    OR (tool_index = 1 AND tool_category != 'Nut Runner')
+    OR (tool_index = 2 AND tool_category != 'Torque Wrench')
+    OR ((tool_index IS NULL OR tool_index NOT IN (1, 2)) AND tool_category != 'Visual Inspect')");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+CREATE TABLE IF NOT EXISTS assembly_torque_standard_specs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    standard_row_id BIGINT NOT NULL,
+    torque_model_id INT NOT NULL,
+    min_value DECIMAL(10, 2) NULL,
+    max_value DECIMAL(10, 2) NULL,
+    unit VARCHAR(50) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assembly_torque_standard_specs_row_model (standard_row_id, torque_model_id),
+    KEY ix_assembly_torque_standard_specs_model (torque_model_id),
+    CONSTRAINT fk_assembly_torque_standard_specs_row
+        FOREIGN KEY (standard_row_id) REFERENCES assembly_torque_standard_rows (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT fk_assembly_torque_standard_specs_model
+        FOREIGN KEY (torque_model_id) REFERENCES assembly_torque_models (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+)");
+    }
+
+    private async Task<TorqueMasterImportResult> ImportTorqueMasterWorkbookAsync(IFormFile file)
+    {
+        await using var stream = file.OpenReadStream();
+        using var workbook = new XLWorkbook(stream);
+        var worksheet = workbook.Worksheets.First();
+        var headerRow = worksheet.FirstRowUsed() ?? throw new ArgumentException("Excel header row was not found.");
+        var lastRow = worksheet.LastRowUsed()?.RowNumber() ?? headerRow.RowNumber();
+        var headers = headerRow.CellsUsed()
+            .Select(cell => new { Key = NormalizeExcelHeader(cell.GetString()), Index = cell.Address.ColumnNumber })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+            .GroupBy(x => x.Key)
+            .ToDictionary(x => x.Key, x => x.First().Index);
+
+        var result = new TorqueMasterImportResult();
+        int? carriedProcessNo = null;
+        var importedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var rowNumber = headerRow.RowNumber() + 1; rowNumber <= lastRow; rowNumber++)
+        {
+            var row = worksheet.Row(rowNumber);
+            if (row.IsEmpty())
+            {
+                continue;
+            }
+
+            result.RowsRead++;
+            var processNo = ReadExcelInt(row, headers, "processno");
+            if (processNo.HasValue)
+            {
+                carriedProcessNo = processNo;
+            }
+            else
+            {
+                processNo = carriedProcessNo;
+            }
+
+            var stepNo = ReadExcelInt(row, headers, "stepno", "stepnumber");
+            var item = ReadExcelText(row, headers, "item");
+            var itemCheck = ReadExcelText(row, headers, "itemcheck");
+            var modelName = FirstText(
+                ReadExcelText(row, headers, "modelpage"),
+                ReadExcelText(row, headers, "model"),
+                ReadExcelText(row, headers, "machine_model"));
+
+            if (string.IsNullOrWhiteSpace(item) || string.IsNullOrWhiteSpace(modelName))
+            {
+                result.Skipped++;
+                continue;
+            }
+
+            var toolIndex = ReadExcelInt(row, headers, "torquecheck", "toolindex");
+            var min = ReadExcelDecimal(row, headers, "min");
+            var max = ReadExcelDecimal(row, headers, "max");
+            var unit = ReadExcelText(row, headers, "unit");
+            var nutSpec = ReadExcelText(row, headers, "nutspec");
+            var nutUsage = ReadExcelInt(row, headers, "nutusage");
+            var tool = ReadExcelInt(row, headers, "tool");
+            var subTool = ReadExcelInt(row, headers, "subtool");
+            var workType = ReadExcelText(row, headers, "worktype");
+            var page = ReadExcelInt(row, headers, "page");
+            var rowKey = BuildTorqueMasterRowKey(processNo, stepNo, item, toolIndex, itemCheck, nutSpec, tool, subTool, workType);
+
+            var modelId = await UpsertTorqueModelAsync(modelName.Trim());
+            await UpsertEngineModelMasterAsync(modelName.Trim());
+            if (importedModels.Add(modelName.Trim()))
+            {
+                result.ModelsSaved++;
+            }
+
+            var standardRowId = await UpsertTorqueStandardRowAsync(
+                rowKey,
+                processNo,
+                stepNo,
+                item,
+                toolIndex,
+                ResolveToolCategory(toolIndex),
+                itemCheck,
+                nutSpec,
+                nutUsage,
+                tool,
+                subTool,
+                workType,
+                modelName,
+                page);
+            result.StandardsSaved++;
+
+            if (min.HasValue || max.HasValue)
+            {
+                await UpsertTorqueStandardSpecAsync(standardRowId, modelId, min, max, unit);
+                result.SpecsSaved++;
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<int> UpsertTorqueModelAsync(string modelName)
+    {
+        await ExecuteNonQueryAsync(@"
+INSERT INTO assembly_torque_models (model_name, is_deleted)
+VALUES (@model_name, 0)
+ON DUPLICATE KEY UPDATE
+    description = VALUES(description),
+    note = VALUES(note),
+    is_deleted = 0",
+            ("@model_name", TrimTo(modelName, 80)));
+
+        return Convert.ToInt32(await ExecuteScalarAsync(
+            "SELECT id FROM assembly_torque_models WHERE model_name = @model_name LIMIT 1",
+            ("@model_name", TrimTo(modelName, 80))) ?? 0, CultureInfo.InvariantCulture);
+    }
+
+    private async Task UpsertEngineModelMasterAsync(string modelName)
+    {
+        await ExecuteNonQueryAsync(@"
+INSERT INTO engine_models (engine_model, description, note, is_deleted)
+VALUES (@engine_model, @description, @note, 0)
+ON DUPLICATE KEY UPDATE
+    is_deleted = 0,
+    updated_at = CURRENT_TIMESTAMP",
+            ("@engine_model", TrimTo(modelName, 45)),
+            ("@description", "Torque Master"),
+            ("@note", "Imported from Torque Master"));
+    }
+
+    private async Task<long> UpsertTorqueStandardRowAsync(
+        string rowKey,
+        int? processNo,
+        int? stepNo,
+        string item,
+        int? toolIndex,
+        string toolCategory,
+        string? itemCheck,
+        string? nutSpec,
+        int? nutUsage,
+        int? tool,
+        int? subTool,
+        string? workType,
+        string? modelPage,
+        int? page)
+    {
+        await ExecuteNonQueryAsync(@"
+INSERT INTO assembly_torque_standard_rows
+    (row_key, process_no, step_no, item, tool_index, tool_category, item_check, nut_spec, nut_usage, tool, sub_tool, work_type, model_page, page, is_deleted)
+VALUES
+    (@row_key, @process_no, @step_no, @item, @tool_index, @tool_category, @item_check, @nut_spec, @nut_usage, @tool, @sub_tool, @work_type, @model_page, @page, 0)
+ON DUPLICATE KEY UPDATE
+    process_no = VALUES(process_no),
+    step_no = VALUES(step_no),
+    item = VALUES(item),
+    tool_index = VALUES(tool_index),
+    tool_category = VALUES(tool_category),
+    item_check = VALUES(item_check),
+    nut_spec = VALUES(nut_spec),
+    nut_usage = VALUES(nut_usage),
+    tool = VALUES(tool),
+    sub_tool = VALUES(sub_tool),
+    work_type = VALUES(work_type),
+    model_page = VALUES(model_page),
+    page = VALUES(page),
+    is_deleted = 0,
+    updated_at = CURRENT_TIMESTAMP",
+            ("@row_key", rowKey),
+            ("@process_no", processNo),
+            ("@step_no", stepNo),
+            ("@item", TrimTo(item, 200)),
+            ("@tool_index", toolIndex),
+            ("@tool_category", ResolveToolCategory(toolIndex, toolCategory)),
+            ("@item_check", string.IsNullOrWhiteSpace(itemCheck) ? null : TrimTo(itemCheck, 200)),
+            ("@nut_spec", string.IsNullOrWhiteSpace(nutSpec) ? null : TrimTo(nutSpec, 80)),
+            ("@nut_usage", nutUsage),
+            ("@tool", tool),
+            ("@sub_tool", subTool),
+            ("@work_type", string.IsNullOrWhiteSpace(workType) ? null : TrimTo(workType, 10)),
+            ("@model_page", string.IsNullOrWhiteSpace(modelPage) ? null : TrimTo(modelPage, 40)),
+            ("@page", page));
+
+        return Convert.ToInt64(await ExecuteScalarAsync(
+            "SELECT id FROM assembly_torque_standard_rows WHERE row_key = @row_key LIMIT 1",
+            ("@row_key", rowKey)) ?? 0, CultureInfo.InvariantCulture);
+    }
+
+    private async Task UpsertTorqueStandardSpecAsync(long standardRowId, int modelId, decimal? min, decimal? max, string? unit)
+    {
+        await ExecuteNonQueryAsync(@"
+INSERT INTO assembly_torque_standard_specs
+    (standard_row_id, torque_model_id, min_value, max_value, unit)
+VALUES
+    (@standard_row_id, @torque_model_id, @min_value, @max_value, @unit)
+ON DUPLICATE KEY UPDATE
+    min_value = VALUES(min_value),
+    max_value = VALUES(max_value),
+    unit = VALUES(unit),
+    updated_at = CURRENT_TIMESTAMP",
+            ("@standard_row_id", standardRowId),
+            ("@torque_model_id", modelId),
+            ("@min_value", min),
+            ("@max_value", max),
+            ("@unit", string.IsNullOrWhiteSpace(unit) ? null : TrimTo(unit, 50)));
+    }
+
+    private async Task SeedTorqueMasterFromLegacyDatabaseAsync()
+    {
+        var hasRows = await ScalarLongAsync("SELECT COUNT(*) FROM assembly_torque_standard_rows");
+        if (hasRows > 0)
+        {
+            return;
+        }
+
+        var hasLegacyDatabase = await ScalarLongAsync("SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'yanmartightening'");
+        if (hasLegacyDatabase == 0)
+        {
+            return;
+        }
+
+        var hasLegacyTable = await ScalarLongAsync(@"
+SELECT COUNT(*)
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = 'yanmartightening' AND TABLE_NAME = 'standardmaster'");
+        if (hasLegacyTable == 0)
+        {
+            return;
+        }
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+INSERT INTO assembly_torque_models (legacy_model_id, model_name, is_deleted)
+SELECT mm.Id, COALESCE(NULLIF(TRIM(mm.Model), ''), CONCAT('Model ', sm.MachineModelId)), COALESCE(mm.IsDeleted, 0)
+FROM yanmartightening.standardmaster sm
+LEFT JOIN yanmartightening.machinemodel mm ON mm.Id = sm.MachineModelId
+WHERE sm.MachineModelId IS NOT NULL
+GROUP BY mm.Id, mm.Model, sm.MachineModelId, mm.IsDeleted
+ON DUPLICATE KEY UPDATE
+    legacy_model_id = VALUES(legacy_model_id),
+    is_deleted = VALUES(is_deleted),
+    updated_at = CURRENT_TIMESTAMP");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+INSERT INTO assembly_torque_standard_rows
+    (row_key, process_no, step_no, item, tool_index, tool_category, item_check, nut_spec, nut_usage, tool, sub_tool, work_type, model_page, page, is_deleted)
+SELECT
+    MD5(CONCAT_WS('|',
+        COALESCE(sm.ProcessNo, -1),
+        COALESCE(sm.StepNo, -1),
+        COALESCE(TRIM(sm.Item), ''),
+        COALESCE(sm.ToolIndex, -1),
+        COALESCE(TRIM(sm.ItemCheck), ''),
+        COALESCE(TRIM(sm.NutSpec), ''),
+        COALESCE(sm.Tool, -1),
+        COALESCE(sm.SubTool, -1),
+        COALESCE(TRIM(sm.WorkType), '')
+    )) AS row_key,
+    MIN(sm.ProcessNo),
+    MIN(sm.StepNo),
+    MAX(NULLIF(TRIM(sm.Item), '')),
+    MIN(sm.ToolIndex),
+    CASE
+        WHEN MIN(sm.ToolIndex) = 1 THEN 'Nut Runner'
+        WHEN MIN(sm.ToolIndex) = 2 THEN 'Torque Wrench'
+        ELSE 'Visual Inspect'
+    END,
+    MAX(NULLIF(TRIM(sm.ItemCheck), '')),
+    MAX(NULLIF(TRIM(sm.NutSpec), '')),
+    MAX(sm.NutUsage),
+    MAX(sm.Tool),
+    MAX(sm.SubTool),
+    NULLIF(TRIM(MAX(sm.WorkType)), ''),
+    NULLIF(TRIM(MAX(sm.ModelPage)), ''),
+    MIN(sm.Page),
+    0
+FROM yanmartightening.standardmaster sm
+GROUP BY
+    MD5(CONCAT_WS('|',
+        COALESCE(sm.ProcessNo, -1),
+        COALESCE(sm.StepNo, -1),
+        COALESCE(TRIM(sm.Item), ''),
+        COALESCE(sm.ToolIndex, -1),
+        COALESCE(TRIM(sm.ItemCheck), ''),
+        COALESCE(TRIM(sm.NutSpec), ''),
+        COALESCE(sm.Tool, -1),
+        COALESCE(sm.SubTool, -1),
+        COALESCE(TRIM(sm.WorkType), '')
+    ))
+ON DUPLICATE KEY UPDATE
+    process_no = VALUES(process_no),
+    step_no = VALUES(step_no),
+    item = VALUES(item),
+    tool_index = VALUES(tool_index),
+    tool_category = VALUES(tool_category),
+    item_check = VALUES(item_check),
+    nut_spec = VALUES(nut_spec),
+    nut_usage = VALUES(nut_usage),
+    tool = VALUES(tool),
+    sub_tool = VALUES(sub_tool),
+    work_type = VALUES(work_type),
+    model_page = VALUES(model_page),
+    page = VALUES(page),
+    updated_at = CURRENT_TIMESTAMP");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+INSERT INTO assembly_torque_standard_specs
+    (standard_row_id, torque_model_id, min_value, max_value, unit)
+SELECT
+    rows_master.id,
+    models.id,
+    MIN(sm.Min),
+    MAX(sm.Max),
+    NULLIF(TRIM(MAX(sm.Unit)), '')
+FROM yanmartightening.standardmaster sm
+JOIN assembly_torque_models models ON models.legacy_model_id = sm.MachineModelId
+JOIN assembly_torque_standard_rows rows_master ON rows_master.row_key = MD5(CONCAT_WS('|',
+        COALESCE(sm.ProcessNo, -1),
+        COALESCE(sm.StepNo, -1),
+        COALESCE(TRIM(sm.Item), ''),
+        COALESCE(sm.ToolIndex, -1),
+        COALESCE(TRIM(sm.ItemCheck), ''),
+        COALESCE(TRIM(sm.NutSpec), ''),
+        COALESCE(sm.Tool, -1),
+        COALESCE(sm.SubTool, -1),
+        COALESCE(TRIM(sm.WorkType), '')
+    ))
+WHERE sm.Min IS NOT NULL OR sm.Max IS NOT NULL
+GROUP BY rows_master.id, models.id
+ON DUPLICATE KEY UPDATE
+    min_value = VALUES(min_value),
+    max_value = VALUES(max_value),
+    unit = VALUES(unit),
+    updated_at = CURRENT_TIMESTAMP");
+    }
+
+    private async Task<List<TorqueMasterModelResponse>> ReadTorqueMasterModelsAsync(IReadOnlyList<int> selectedModelIds)
+    {
+        var models = new List<TorqueMasterModelResponse>();
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        if (selectedModelIds.Count > 0)
+        {
+            command.CommandText = $@"
+SELECT torque_models.id, engine_models.engine_model
+FROM engine_models
+JOIN assembly_torque_models torque_models
+    ON torque_models.model_name = engine_models.engine_model COLLATE utf8mb4_unicode_ci
+    AND torque_models.is_deleted != 1
+WHERE engine_models.is_deleted != 1
+    AND torque_models.id IN ({string.Join(",", selectedModelIds)})
+ORDER BY engine_models.engine_model
+LIMIT 8";
+        }
+        else
+        {
+            command.CommandText = @"
+SELECT torque_models.id, engine_models.engine_model
+FROM engine_models
+JOIN assembly_torque_models torque_models
+    ON torque_models.model_name = engine_models.engine_model COLLATE utf8mb4_unicode_ci
+    AND torque_models.is_deleted != 1
+LEFT JOIN assembly_torque_standard_specs specs ON specs.torque_model_id = torque_models.id
+WHERE engine_models.is_deleted != 1
+GROUP BY torque_models.id, engine_models.engine_model
+ORDER BY
+    engine_models.engine_model
+LIMIT 6";
+        }
+
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            models.Add(new TorqueMasterModelResponse
+            {
+                Id = reader.GetInt32(0),
+                ModelName = reader.GetString(1)
+            });
+        }
+
+        return models;
+    }
+
+    private async Task<List<TorqueMasterRowResponse>> ReadTorqueMasterRowsAsync(IReadOnlyList<TorqueMasterModelResponse> models, int? processNo, string? search)
+    {
+        var modelIds = models.Select(x => x.Id).ToList();
+        if (modelIds.Count == 0)
+        {
+            return [];
+        }
+
+        var rows = new List<TorqueMasterRowResponse>();
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        var filters = new List<string>
+        {
+            "rows_master.is_deleted != 1"
+        };
+
+        if (models.Count == 1)
+        {
+            filters.Add("(rows_master.model_page = @model_page OR specs.torque_model_id IS NOT NULL)");
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@model_page";
+            parameter.Value = models[0].ModelName;
+            command.Parameters.Add(parameter);
+        }
+        else
+        {
+            filters.Add("specs.torque_model_id IS NOT NULL");
+        }
+
+        if (processNo.HasValue)
+        {
+            filters.Add("rows_master.process_no = @process_no");
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@process_no";
+            parameter.Value = processNo.Value;
+            command.Parameters.Add(parameter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            filters.Add("(rows_master.item LIKE @search OR rows_master.item_check LIKE @search OR rows_master.nut_spec LIKE @search)");
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@search";
+            parameter.Value = $"%{search.Trim()}%";
+            command.Parameters.Add(parameter);
+        }
+
+        command.CommandText = $@"
+SELECT
+    rows_master.id,
+    rows_master.process_no,
+    rows_master.step_no,
+    rows_master.item,
+    rows_master.tool_index,
+    rows_master.tool_category,
+    rows_master.item_check,
+    rows_master.nut_spec,
+    rows_master.nut_usage,
+    rows_master.tool,
+    rows_master.sub_tool,
+    rows_master.work_type,
+    rows_master.model_page,
+    rows_master.page,
+    specs.torque_model_id,
+    specs.min_value,
+    specs.max_value,
+    specs.unit
+FROM assembly_torque_standard_rows rows_master
+LEFT JOIN assembly_torque_standard_specs specs
+    ON specs.standard_row_id = rows_master.id
+    AND specs.torque_model_id IN ({string.Join(",", modelIds)})
+WHERE {string.Join(" AND ", filters)}
+ORDER BY
+    COALESCE(rows_master.process_no, 9999),
+    COALESCE(rows_master.step_no, 9999),
+    rows_master.item,
+    rows_master.item_check
+LIMIT 600";
+
+        var rowById = new Dictionary<long, TorqueMasterRowResponse>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var rowId = reader.GetInt64(0);
+            if (!rowById.TryGetValue(rowId, out var row))
+            {
+                var toolIndex = reader.IsDBNull(4) ? (int?)null : reader.GetInt32(4);
+                row = new TorqueMasterRowResponse
+                {
+                    Id = rowId,
+                    ProcessNo = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                    StepNo = reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                    Item = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    ToolIndex = toolIndex,
+                    ToolType = ResolveToolCategory(toolIndex, reader.IsDBNull(5) ? null : reader.GetString(5)),
+                    ItemCheck = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    NutSpec = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    NutUsage = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                    Tool = reader.IsDBNull(9) ? null : reader.GetInt32(9),
+                    SubTool = reader.IsDBNull(10) ? null : reader.GetInt32(10),
+                    WorkType = reader.IsDBNull(11) ? null : reader.GetString(11),
+                    ModelPage = reader.IsDBNull(12) ? null : reader.GetString(12),
+                    Page = reader.IsDBNull(13) ? null : reader.GetInt32(13)
+                };
+                rowById.Add(rowId, row);
+                rows.Add(row);
+            }
+
+            if (!reader.IsDBNull(14))
+            {
+                var modelId = reader.GetInt32(14);
+                row.Specs[modelId] = new TorqueMasterSpecResponse
+                {
+                    Min = reader.IsDBNull(15) ? null : reader.GetDecimal(15),
+                    Max = reader.IsDBNull(16) ? null : reader.GetDecimal(16),
+                    Unit = reader.IsDBNull(17) ? null : reader.GetString(17)
+                };
+            }
+        }
+
+        return rows;
+    }
+
+    private async Task<long> ScalarLongAsync(string sql)
+    {
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var value = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(value ?? 0, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<object?> ExecuteScalarAsync(string sql, params (string Name, object? Value)[] parameters)
+    {
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        AddCommandParameters(command, parameters);
+        return await command.ExecuteScalarAsync();
+    }
+
+    private async Task ExecuteNonQueryAsync(string sql, params (string Name, object? Value)[] parameters)
+    {
+        var connection = _db.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        AddCommandParameters(command, parameters);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static void AddCommandParameters(IDbCommand command, params (string Name, object? Value)[] parameters)
+    {
+        foreach (var (name, value) in parameters)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value ?? DBNull.Value;
+            command.Parameters.Add(parameter);
+        }
+    }
+
+    private static string BuildTorqueMasterRowKey(
+        int? processNo,
+        int? stepNo,
+        string? item,
+        int? toolIndex,
+        string? itemCheck,
+        string? nutSpec,
+        int? tool,
+        int? subTool,
+        string? workType)
+    {
+        var raw = string.Join("|",
+            processNo?.ToString(CultureInfo.InvariantCulture) ?? "-1",
+            stepNo?.ToString(CultureInfo.InvariantCulture) ?? "-1",
+            item?.Trim() ?? string.Empty,
+            toolIndex?.ToString(CultureInfo.InvariantCulture) ?? "-1",
+            itemCheck?.Trim() ?? string.Empty,
+            nutSpec?.Trim() ?? string.Empty,
+            tool?.ToString(CultureInfo.InvariantCulture) ?? "-1",
+            subTool?.ToString(CultureInfo.InvariantCulture) ?? "-1",
+            workType?.Trim() ?? string.Empty);
+
+        var hashBytes = MD5.HashData(Encoding.UTF8.GetBytes(raw));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    private static string NormalizeExcelHeader(string? value)
+    {
+        return new string((value ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
+    }
+
+    private static string? ReadExcelText(IXLRow row, IReadOnlyDictionary<string, int> headers, params string[] names)
+    {
+        foreach (var name in names.Select(NormalizeExcelHeader))
+        {
+            if (headers.TryGetValue(name, out var column))
+            {
+                var text = row.Cell(column).GetFormattedString().Trim();
+                return string.IsNullOrWhiteSpace(text) ? null : text;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ReadExcelInt(IXLRow row, IReadOnlyDictionary<string, int> headers, params string[] names)
+    {
+        var text = ReadExcelText(row, headers, names);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            return value;
+        }
+
+        return decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var decimalValue)
+            ? (int)decimalValue
+            : null;
+    }
+
+    private static decimal? ReadExcelDecimal(IXLRow row, IReadOnlyDictionary<string, int> headers, params string[] names)
+    {
+        var text = ReadExcelText(row, headers, names);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        text = text.Replace(',', '.');
+        return decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+
+    private static List<int> ParseIdList(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        return value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => int.TryParse(x, out var id) ? id : 0)
+            .Where(x => x > 0)
+            .Distinct()
+            .Take(8)
+            .ToList();
+    }
+
+    private static string ResolveToolCategory(int? toolIndex, string? category = null)
+    {
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            var normalized = category.Trim();
+            if (normalized.Equals("Torque Wrench", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Torque Wrench";
+            }
+
+            if (normalized.Equals("Nut Runner", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Nut Runner";
+            }
+
+            if (normalized.Equals("Visual Inspect", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("No Use", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Visual Inspect";
+            }
+        }
+
+        return toolIndex switch
+        {
+            1 => "Nut Runner",
+            2 => "Torque Wrench",
+            _ => "Visual Inspect"
+        };
+    }
+
+    private async Task EnsureAssemblyWorkstationMasterTablesAsync()
+    {
+        await _db.Database.ExecuteSqlRawAsync(@"
+CREATE TABLE IF NOT EXISTS assembly_workstations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    workstation_code VARCHAR(50) NOT NULL,
+    workstation_name VARCHAR(120) NOT NULL,
+    workstation_no INT NOT NULL,
+    description VARCHAR(255) NULL,
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assembly_workstations_code (workstation_code),
+    KEY ix_assembly_workstations_no (workstation_no)
+)");
+
+        await _db.Database.ExecuteSqlRawAsync(@"
+CREATE TABLE IF NOT EXISTS assembly_tools (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    workstation_id INT NOT NULL,
+    tool_code VARCHAR(50) NOT NULL,
+    tool_name VARCHAR(120) NOT NULL,
+    nut_size VARCHAR(40) NOT NULL,
+    program_no INT NULL,
+    torque_standard DECIMAL(8, 2) NOT NULL DEFAULT 0,
+    torque_min DECIMAL(8, 2) NOT NULL DEFAULT 0,
+    torque_max DECIMAL(8, 2) NOT NULL DEFAULT 0,
+    unit VARCHAR(20) NOT NULL DEFAULT 'N.m',
+    sequence_no INT NOT NULL DEFAULT 0,
+    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_assembly_tools_workstation_tool (workstation_id, tool_code),
+    KEY ix_assembly_tools_nut_size (nut_size),
+    KEY ix_assembly_tools_sequence_no (sequence_no),
+    CONSTRAINT fk_assembly_tools_workstation
+        FOREIGN KEY (workstation_id) REFERENCES assembly_workstations (id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+)");
+
+        await EnsureColumnAbsentAsync(
+            "assembly_tools",
+            "drive_size",
+            "ALTER TABLE assembly_tools DROP COLUMN drive_size");
     }
 
     private async Task EnsureSystemSettingsTablesAsync()

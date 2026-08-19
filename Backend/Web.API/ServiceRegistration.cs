@@ -36,7 +36,7 @@ public static class ServiceRegistration
 
         services.AddSwaggerGen(c =>
         {
-            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Leaktester Work Record Monitoring API", Version = "v1" });
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Assembly System Monitoring API", Version = "v1" });
             c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Description = "JWT Authorization header. Example: Bearer {token}",
@@ -114,8 +114,9 @@ public static class ServiceRegistration
         });
 
         var connectionString = ReadSettingsIniValue("Database", "ConnectionString")
+            ?? Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING")
             ?? configuration.GetConnectionString("DefaultConnection")
-            ?? "Server=127.0.0.1;Port=3306;User ID=root;Password=YOUR_PASSWORD;Database=yanmarleaktest;SslMode=None;AllowPublicKeyRetrieval=True;";
+            ?? "Server=127.0.0.1;Port=3306;User ID=root;Password=YOUR_PASSWORD;Database=yanmarassy;SslMode=None;AllowPublicKeyRetrieval=True;";
         services.AddDbContext<AppDbContext>(options =>
         {
             options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 34)));
@@ -201,7 +202,7 @@ public static class ServiceRegistration
         if (swaggerEnabled)
         {
             app.UseSwagger();
-            app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Leaktester Work Record Monitoring API v1"));
+            app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Assembly System Monitoring API v1"));
         }
 
         app.UseCors();

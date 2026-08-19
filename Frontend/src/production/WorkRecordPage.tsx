@@ -7,7 +7,7 @@ import ExportButton from "@/components/common/ExportButton";
 import { Modal } from "@/components/ui/modal";
 import { ArrowRightIcon, ChevronLeftIcon } from "@/icons";
 import { apiDownload, apiGet } from "@/lib/api";
-import type { EngineModel, LeakTestParameter, LeakTestResult, LeakTestWorkRecord } from "./types";
+import type { EngineModel, LeakTestResult, LeakTestWorkRecord } from "./types";
 import { displayNumber, displayUnitlessText, fetchSystemSettings, getUnitSettings, type UnitSettings } from "./settings";
 import { todayParam } from "./ui";
 
@@ -66,82 +66,6 @@ function pressureInputTextClass(result: LeakTestResult) {
   return result === "OK"
     ? "text-emerald-700 dark:text-emerald-300"
     : "text-rose-700 dark:text-rose-300";
-}
-
-function normalizeModelKey(value?: string | null) {
-  return String(value || "")
-    .replace(/[^a-z0-9]/gi, "")
-    .toUpperCase();
-}
-
-function splitCsv(value?: string | null) {
-  return String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function findParameterValue(parameters: LeakTestParameter[], itemName: string) {
-  const term = itemName.toLowerCase();
-  return parameters.find((parameter) => parameter.item_name.toLowerCase().includes(term))?.item_value ?? null;
-}
-
-function formatMasterPressureLimit(lower?: string | null, upper?: string | null) {
-  if (lower && upper) {
-    return `${lower} ~ ${upper}`;
-  }
-
-  if (lower) return lower;
-  if (upper) return upper;
-  return "-";
-}
-
-function getMasterParameterContext(parameters: LeakTestParameter[], engineModel: string) {
-  const modelKey = normalizeModelKey(engineModel);
-  if (!modelKey || !parameters.length) {
-    return { channelNo: "-", limit: "-" };
-  }
-
-  const groups = new Map<string, LeakTestParameter[]>();
-  parameters.forEach((parameter) => {
-    const channelNo = parameter.channel_no.trim();
-    if (!channelNo) return;
-    groups.set(channelNo, [...(groups.get(channelNo) ?? []), parameter]);
-  });
-
-  const groupedParameters = Array.from(groups.values());
-  const exactGroup = groupedParameters.find((group) =>
-    group.some((parameter) =>
-      splitCsv(parameter.machine_names).some((machine) => normalizeModelKey(machine) === modelKey)
-    )
-  );
-
-  const prefixGroup = exactGroup ?? groupedParameters
-    .map((group) => ({
-      group,
-      score: Math.max(
-        0,
-        ...group.flatMap((parameter) =>
-          splitCsv(parameter.model_parameter)
-            .map(normalizeModelKey)
-            .filter((parameterKey) => parameterKey && modelKey.startsWith(parameterKey))
-            .map((parameterKey) => parameterKey.length)
-        )
-      ),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((left, right) => right.score - left.score)[0]?.group;
-
-  if (!prefixGroup?.length) {
-    return { channelNo: "-", limit: "-" };
-  }
-
-  const lower = findParameterValue(prefixGroup, "lower press limit");
-  const upper = findParameterValue(prefixGroup, "upper press limit");
-  return {
-    channelNo: prefixGroup[0].channel_no,
-    limit: formatMasterPressureLimit(lower, upper),
-  };
 }
 
 function displayBarcode(record: LeakTestWorkRecord) {
@@ -252,7 +176,6 @@ function DetailItem({
 export default function WorkRecordPage() {
   const [records, setRecords] = useState<LeakTestWorkRecord[]>([]);
   const [engineModels, setEngineModels] = useState<EngineModel[]>([]);
-  const [parameters, setParameters] = useState<LeakTestParameter[]>([]);
   const [dateRangeStart, setDateRangeStart] = useState(todayParam());
   const [dateRangeEnd, setDateRangeEnd] = useState(todayParam());
   const [engineModelFilter, setEngineModelFilter] = useState("");
@@ -265,7 +188,7 @@ export default function WorkRecordPage() {
   const [tablePageSize, setTablePageSize] = useState(DEFAULT_TABLE_PAGE_SIZE);
   const [message, setMessage] = useState<{ kind: "error"; text: string } | null>(null);
   const [unitSettings, setUnitSettings] = useState<UnitSettings>(() => getUnitSettings());
-  const pressureUnit = unitSettings.pressureUnit.trim() || "MPa";
+  const pressureUnit = unitSettings.pressureUnit.trim() || "N.m";
   const cycleTimeUnit = unitSettings.cycleTimeUnit.trim() || "s";
 
   useEffect(() => {
@@ -359,16 +282,6 @@ export default function WorkRecordPage() {
         setEngineModels([]);
       });
 
-    void apiGet<LeakTestParameter[]>("/api/leaktester/parameters?status=active")
-      .then((items) => {
-        if (ignore) return;
-        setParameters(items);
-      })
-      .catch(() => {
-        if (ignore) return;
-        setParameters([]);
-      });
-
     return () => {
       ignore = true;
     };
@@ -437,8 +350,8 @@ export default function WorkRecordPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-600">Leaktester</p>
-          <h1 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Leaktester Work Record</h1>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-600">Assembly System</p>
+          <h1 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Work Record</h1>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
           <div className="w-full sm:w-auto">
@@ -526,7 +439,7 @@ export default function WorkRecordPage() {
                   setBarcodeScanFilter(event.target.value);
                   resetTableView();
                 }}
-                placeholder="Scan barcode"
+                placeholder="Engine model + serial no"
                 value={barcodeScanFilter}
               />
             </label>
@@ -550,27 +463,25 @@ export default function WorkRecordPage() {
         </div>
 
         <div className="overflow-x-auto px-3 pb-3 pt-3">
-          <table className="leak-rounded-header-table w-full min-w-[1480px] border-separate border-spacing-0 text-left text-sm">
+          <table className="leak-rounded-header-table w-full min-w-[1240px] border-separate border-spacing-0 text-left text-sm">
             <thead className="bg-transparent text-xs uppercase text-white">
               <tr className="bg-transparent">
                 <th className="rounded-l-lg bg-brand-500 px-5 py-3">Engine Model</th>
                 <th className="bg-brand-500 px-4 py-3">Serial No</th>
                 <th className="bg-brand-500 px-4 py-3">Barcode Scan</th>
-                <th className="bg-brand-500 px-4 py-3">Operator Code</th>
-                <th className="bg-brand-500 px-4 py-3">Operator Name</th>
                 <th className="bg-brand-500 px-4 py-3">Date</th>
                 <th className="bg-brand-500 px-4 py-3">Time</th>
-                <th className="bg-brand-500 px-4 py-3">Channel</th>
-                <th className="bg-brand-500 px-4 py-3">Pressure Limit (TP LL ~ TP UL) ({pressureUnit})</th>
-                <th className="bg-brand-500 px-4 py-3">Pressure Input ({pressureUnit})</th>
+                <th className="bg-brand-500 px-4 py-3">Process Number</th>
+                <th className="bg-brand-500 px-4 py-3">Step Number</th>
+                <th className="bg-brand-500 px-4 py-3">Item</th>
+                <th className="bg-brand-500 px-4 py-3">Torque Limit ({pressureUnit})</th>
+                <th className="bg-brand-500 px-4 py-3">Torque Actual ({pressureUnit})</th>
                 <th className="bg-brand-500 px-4 py-3">Cycle Time ({cycleTimeUnit})</th>
                 <th className="rounded-r-lg bg-brand-500 px-5 py-3">Result</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paginatedRecords.map((record) => {
-                const parameterContext = getMasterParameterContext(parameters, record.engine_model);
-                return (
+              {paginatedRecords.map((record) => (
                   <tr
                     className="cursor-pointer transition hover:bg-brand-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 dark:hover:bg-slate-800/70"
                     key={record.id}
@@ -588,12 +499,12 @@ export default function WorkRecordPage() {
                     <td className="px-5 py-4 font-bold text-slate-900 dark:text-white">{record.engine_model}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{record.engine_number}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{displayBarcode(record)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{record.operator_code || "-"}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{record.operator_name || "-"}</td>
                     <td className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-300">{displayDate(record.check_date)}</td>
                     <td className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-300">{displayTime(record.check_time)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{parameterContext.channelNo}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{displayUnitlessText(parameterContext.limit)}</td>
+                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{record.process_no ?? "-"}</td>
+                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{record.step_no ?? "-"}</td>
+                    <td className="px-4 py-4 font-semibold text-slate-700 dark:text-slate-200">{displayOptional(record.item)}</td>
+                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{displayUnitlessText(record.parameter_limit)}</td>
                     <td className="px-4 py-4">
                       <span className={`inline-flex rounded-md border px-2.5 py-1 text-xs font-black ${pressureInputStateClass(record.result)}`}>
                         {displayNumber(record.pressure_input)}
@@ -606,8 +517,7 @@ export default function WorkRecordPage() {
                       </span>
                     </td>
                   </tr>
-                );
-              })}
+              ))}
             </tbody>
           </table>
           {!records.length ? <p className="px-5 py-12 text-center text-sm text-slate-400 dark:text-slate-200">No work records match the selected filters.</p> : null}
@@ -660,9 +570,7 @@ export default function WorkRecordPage() {
         isOpen={Boolean(selectedRecord)}
         onClose={() => setSelectedRecord(null)}
       >
-        {selectedRecord ? (() => {
-          const parameterContext = getMasterParameterContext(parameters, selectedRecord.engine_model);
-          return (
+        {selectedRecord ? (
           <div>
             <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand-600">Work Record Detail</p>
@@ -675,14 +583,14 @@ export default function WorkRecordPage() {
               <DetailItem label="Barcode Scan" value={displayBarcode(selectedRecord)} />
               <DetailItem label="Date" value={displayDate(selectedRecord.check_date)} />
               <DetailItem label="Time" value={displayTime(selectedRecord.check_time)} />
-              <DetailItem label="Operator Code" value={selectedRecord.operator_code || "-"} />
-              <DetailItem label="Operator Name" value={selectedRecord.operator_name || "-"} />
-              <DetailItem label="Channel No" value={parameterContext.channelNo} />
-              <DetailItem label={`Pressure Limit (TP LL ~ TP UL) (${pressureUnit})`} value={displayUnitlessText(parameterContext.limit)} />
-              <DetailItem label={`Pressure Setting (${pressureUnit})`} value={displayNumber(selectedRecord.parameter_pressure)} />
+              <DetailItem label="Process Number" value={selectedRecord.process_no ?? "-"} />
+              <DetailItem label="Step Number" value={selectedRecord.step_no ?? "-"} />
+              <DetailItem label="Item" value={displayOptional(selectedRecord.item)} />
+              <DetailItem label={`Torque Limit (${pressureUnit})`} value={displayUnitlessText(selectedRecord.parameter_limit)} />
+              <DetailItem label={`Torque Setting (${pressureUnit})`} value={displayNumber(selectedRecord.parameter_pressure)} />
               <DetailItem
                 className={pressureInputStateClass(selectedRecord.result)}
-                label={`Pressure Input (${pressureUnit})`}
+                label={`Torque Actual (${pressureUnit})`}
                 value={displayNumber(selectedRecord.pressure_input)}
                 valueClassName={pressureInputTextClass(selectedRecord.result)}
               />
@@ -716,8 +624,7 @@ export default function WorkRecordPage() {
               </button>
             </div>
           </div>
-          );
-        })() : null}
+        ) : null}
       </Modal>
     </div>
   );

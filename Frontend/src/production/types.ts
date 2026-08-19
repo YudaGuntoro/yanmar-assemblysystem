@@ -17,25 +17,6 @@ export type Operator = {
   updated_at: string;
 };
 
-export type LeakTestParameter = {
-  id: number;
-  channel_no: string;
-  model_parameter: string;
-  item_name: string;
-  item_value: string;
-  machine_names?: string | null;
-  is_deleted?: boolean | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type LeakTestParameterImportResult = {
-  imported: number;
-  updated: number;
-  skipped: number;
-  channels: number;
-};
-
 export type LeakTestResult = "OK" | "NG";
 
 export type LeakTestJudgement = {
@@ -47,6 +28,70 @@ export type LeakTestJudgement = {
   is_deleted?: boolean | null;
   created_at: string;
   updated_at: string;
+};
+
+export type AssemblyTool = {
+  id: number;
+  workstation_id: number;
+  tool_code: string;
+  tool_name: string;
+  nut_size: string;
+  program_no?: number | null;
+  torque_standard: number;
+  torque_min: number;
+  torque_max: number;
+  unit: string;
+  sequence_no: number;
+  is_deleted?: boolean | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AssemblyWorkstation = {
+  id: number;
+  workstation_code: string;
+  workstation_name: string;
+  workstation_no: number;
+  description?: string | null;
+  is_deleted?: boolean | null;
+  created_at: string;
+  updated_at: string;
+  tools: AssemblyTool[];
+};
+
+export type TorqueMasterModel = {
+  id: number;
+  model_name: string;
+};
+
+export type TorqueMasterSpec = {
+  min?: number | null;
+  max?: number | null;
+  unit?: string | null;
+};
+
+export type TorqueMasterRow = {
+  id: number;
+  process_no?: number | null;
+  step_no?: number | null;
+  item?: string | null;
+  tool_type: string;
+  tool_index?: number | null;
+  item_check?: string | null;
+  nut_spec?: string | null;
+  nut_usage?: number | null;
+  tool?: number | null;
+  sub_tool?: number | null;
+  work_type?: string | null;
+  work_address?: number | null;
+  model_page?: string | null;
+  page?: number | null;
+  specs: Record<string, TorqueMasterSpec>;
+};
+
+export type TorqueMasterResponse = {
+  models: TorqueMasterModel[];
+  rows: TorqueMasterRow[];
 };
 
 export type LeakTestWorkRecord = {
@@ -62,6 +107,9 @@ export type LeakTestWorkRecord = {
   operator_code?: string | null;
   operator_name?: string | null;
   parameter_pressure: number;
+  process_no?: number | null;
+  step_no?: number | null;
+  item?: string | null;
   press_set_up?: number | null;
   press_set_low?: number | null;
   pressure_input: number;

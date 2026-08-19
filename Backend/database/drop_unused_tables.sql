@@ -1,7 +1,7 @@
--- Drop tables that are not used by Leaktester Work Record.
+-- Drop tables that are not used by Assembly System.
 -- Keep: users, roles, engine_models, leak_test_work_records.
 
-USE yanmarleaktest;
+USE yanmarassy;
 
 SET FOREIGN_KEY_CHECKS = 0;
 

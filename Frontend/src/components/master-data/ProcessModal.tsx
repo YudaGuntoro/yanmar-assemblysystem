@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/context/ToastContext";
-import ParameterService, { Parameter } from "@/services/ParameterService";
 import ProcessService, {
   Process,
   ProcessPayload,
@@ -37,8 +36,6 @@ export default function ProcessModal({
 }: ProcessModalProps) {
   const toast = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingParameters, setIsLoadingParameters] = useState(false);
-  const [parameters, setParameters] = useState<Parameter[]>([]);
   const [formData, setFormData] =
     useState<ProcessFormData>(initialFormData);
 
@@ -53,60 +50,13 @@ export default function ProcessModal({
         name: process.name || "",
         description: process.description || "",
         isActive: process.isActive ?? true,
-        parameterIds: process.parameters?.map((parameter) => parameter.id) ?? [],
+        parameterIds: [],
       });
       return;
     }
 
     setFormData(initialFormData);
   }, [isOpen, process]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsLoadingParameters(true);
-
-    ParameterService.getParameters(
-      {
-        isActive: true,
-        limit: 100,
-        page: 1,
-      },
-      {
-        signal: controller.signal,
-      }
-    )
-      .then((result) => {
-        setParameters(result.data);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-
-        toast.error({
-          title: "Failed to load parameters",
-          message: getErrorMessage(error, "Failed to load parameters"),
-        });
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsLoadingParameters(false);
-        }
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [isOpen, toast]);
-
-  const selectedParameterIdSet = useMemo(
-    () => new Set(formData.parameterIds),
-    [formData.parameterIds]
-  );
 
   const handleChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -118,19 +68,6 @@ export default function ProcessModal({
       ...current,
       [name]: type === "checkbox" ? checked : value,
     }));
-  };
-
-  const handleParameterToggle = (parameterId: number) => {
-    setFormData((current) => {
-      const isSelected = current.parameterIds.includes(parameterId);
-
-      return {
-        ...current,
-        parameterIds: isSelected
-          ? current.parameterIds.filter((id) => id !== parameterId)
-          : [...current.parameterIds, parameterId],
-      };
-    });
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -216,53 +153,6 @@ export default function ProcessModal({
             className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
             placeholder="Enter process description"
           />
-        </div>
-
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Parameters
-            </label>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              {formData.parameterIds.length} selected
-            </span>
-          </div>
-          <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-300 p-3 dark:border-gray-700 dark:bg-gray-900">
-            {isLoadingParameters && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Loading parameters...
-              </p>
-            )}
-
-            {!isLoadingParameters && parameters.length === 0 && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No active parameters found
-              </p>
-            )}
-
-            {!isLoadingParameters &&
-              parameters.map((parameter) => (
-                <label
-                  key={parameter.id}
-                  className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-gray-50 dark:hover:bg-white/[0.04]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedParameterIdSet.has(parameter.id)}
-                    onChange={() => handleParameterToggle(parameter.id)}
-                    className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-500"
-                  />
-                  <span>
-                    <span className="block text-sm font-medium text-gray-800 dark:text-white/90">
-                      {parameter.code} - {parameter.name}
-                    </span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400">
-                      {parameter.dataType}
-                    </span>
-                  </span>
-                </label>
-              ))}
-          </div>
         </div>
 
         <div className="flex items-center gap-2">

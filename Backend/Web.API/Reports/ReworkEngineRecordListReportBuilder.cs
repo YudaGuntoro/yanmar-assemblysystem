@@ -32,7 +32,7 @@ public static class ReworkEngineRecordListReportBuilder
         worksheet.PageSetup.PrintAreas.Add($"B2:L{lastRow}");
 
         workbook.Properties.Title = "Manual Leaktest - Rework Engine";
-        workbook.Properties.Author = "Leaktester Work Record";
+        workbook.Properties.Author = "Assembly System";
         workbook.Properties.Company = "PT. Yanmar Diesel Indonesia";
         workbook.Properties.Subject = "Manual Leaktest Rework Engine Export";
         workbook.Properties.Created = DateTime.Now;

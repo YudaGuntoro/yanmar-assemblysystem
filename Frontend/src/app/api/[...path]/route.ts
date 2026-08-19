@@ -66,11 +66,11 @@ async function proxyApiRequest(request: Request, context: RouteContext) {
     return Response.json(
       {
         success: false,
-        statusCode: 502,
-        message,
+        statusCode: 503,
+        message: `Backend API is not reachable at ${getServerApiBaseUrl()}. ${message}`,
         data: null,
       },
-      { status: 502 }
+      { status: 503 }
     );
   }
 }

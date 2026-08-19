@@ -1,12 +1,12 @@
-name: leaktest-system
+name: assembly-system
 
 services:
   api:
     build:
       context: ./Backend
       dockerfile: Web.API/Dockerfile
-    image: leaktest-system-api:latest
-    container_name: leaktest-api
+    image: assembly-system-api:latest
+    container_name: assembly-api
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -14,8 +14,8 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__DefaultConnection: ${MYSQL_CONNECTION_STRING}
-      Jwt__Issuer: ${JWT_ISSUER:-LeaktesterWorkRecord}
-      Jwt__Audience: ${JWT_AUDIENCE:-LeaktesterWorkRecord.Frontend}
+      Jwt__Issuer: ${JWT_ISSUER:-AssemblySystem}
+      Jwt__Audience: ${JWT_AUDIENCE:-AssemblySystem.Frontend}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
       Jwt__ExpiresHours: ${JWT_EXPIRES_HOURS:-8}
       Swagger__Enabled: ${SWAGGER_ENABLED:-false}
@@ -24,7 +24,7 @@ services:
     ports:
       - "${API_HOST_PORT:-5274}:8080"
     networks:
-      - leaktest-net
+      - assembly-net
 
   web:
     build:
@@ -33,8 +33,8 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ""
         SERVER_API_BASE_URL: ${SERVER_API_BASE_URL:-http://api:8080}
-    image: leaktest-system-web:latest
-    container_name: leaktest-web
+    image: assembly-system-web:latest
+    container_name: assembly-web
     restart: unless-stopped
     depends_on:
       - api
@@ -44,7 +44,7 @@ services:
     ports:
       - "${FRONTEND_HOST_PORT:-8091}:3000"
     networks:
-      - leaktest-net
+      - assembly-net
 
   worker:
     profiles:
@@ -52,8 +52,8 @@ services:
     build:
       context: ./Backend/LeakTestWorker
       dockerfile: Dockerfile
-    image: leaktest-system-worker:latest
-    container_name: leaktest-worker
+    image: assembly-system-worker:latest
+    container_name: assembly-worker
     restart: unless-stopped
     depends_on:
       - api
@@ -63,21 +63,21 @@ services:
       MYSQL_CONNECTION_STRING: ${MYSQL_CONNECTION_STRING}
       MQTT_HOST: ${MQTT_HOST:-host.docker.internal}
       MQTT_PORT: ${MQTT_PORT:-1883}
-      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-LeakTestWorker}
-      MQTT_TOPIC: ${MQTT_TOPIC:-/LeakTest}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-AssemblyNutRunnerWorker}
+      MQTT_TOPIC: ${MQTT_TOPIC:-assembly_nutrunner_mqtt}
       MQTT_QOS: ${MQTT_QOS:-1}
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-1}
       WORKER_RECONNECT_DELAY_SECONDS: ${WORKER_RECONNECT_DELAY_SECONDS:-3}
     volumes:
-      - leaktest-worker-buffer:/app/buffer
+      - assembly-worker-buffer:/app/buffer
     networks:
-      - leaktest-net
+      - assembly-net
 
 networks:
-  leaktest-net:
+  assembly-net:
     driver: bridge
 
 volumes:
-  leaktest-worker-buffer:
+  assembly-worker-buffer:

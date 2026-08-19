@@ -61,12 +61,13 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center bg-white px-4 py-10 dark:bg-gray-950 sm:px-6 lg:w-1/2 lg:px-10">
+    <div className="relative z-10 flex min-h-screen w-full items-center justify-center bg-white px-4 py-10 dark:bg-gray-950 sm:px-6 lg:w-1/2 lg:px-10">
       <div className="relative w-full max-w-[448px]">
         <div className="rounded-2xl border border-[#d9e2ef] bg-white px-8 py-10 shadow-[0_24px_60px_rgba(15,23,42,0.14)] dark:border-gray-800 dark:bg-gray-900 dark:shadow-[0_24px_60px_rgba(0,0,0,0.28)] sm:px-8">
           <div className="mb-7 text-center">
             <YanmarMark className="mx-auto h-auto w-32" />
-            <p className="mt-4 text-sm text-[#263a56] dark:text-gray-400">Sign in to access your dashboard</p>
+            <h1 className="mt-5 text-2xl font-black text-[#111827] dark:text-white">Assembly System</h1>
+            <p className="mt-2 text-sm font-medium text-[#536982] dark:text-gray-300">Sign in to access nut runner dashboard</p>
           </div>
 
           {error ? (
@@ -147,7 +148,7 @@ export default function SignInPage() {
             </div>
           </form>
 
-          <p className="mt-8 text-center text-[11px] font-medium text-[#536982] dark:text-gray-500">Protected by enterprise-grade security protocols</p>
+          <p className="mt-8 text-center text-[11px] font-medium text-[#536982] dark:text-gray-400">PT. Yanmar Diesel Indonesia</p>
         </div>
       </div>
     </div>

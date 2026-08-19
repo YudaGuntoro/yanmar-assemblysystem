@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import ProductionDashboard from "@/production/ProductionDashboard";
 
 export const metadata: Metadata = {
-  title: "Leaktester Work Record | PT. Yanmar Diesel Indonesia",
-  description: "Leaktester work record and inspection monitoring dashboard",
+  title: "Assembly System | PT. Yanmar Diesel Indonesia",
+  description: "Assembly nut runner work record and monitoring dashboard",
 };
 
 export default function LeaktesterWorkRecordHome() {

@@ -13,13 +13,13 @@ export type SystemSettings = UnitSettings & {
   schedule: BackupSchedule;
 };
 
-export const SYSTEM_SETTINGS_STORAGE_KEY = "yanmar-leaktester-backup-settings";
+export const SYSTEM_SETTINGS_STORAGE_KEY = "yanmar-assembly-backup-settings";
 
 export const defaultSystemSettings: SystemSettings = {
   backupDbLocation: "",
   cycleTimeUnit: "s",
   plcIpAddress: "",
-  pressureUnit: "MPa",
+  pressureUnit: "N.m",
   schedule: "daily",
 };
 
@@ -105,7 +105,7 @@ export function displayUnitlessText(value?: string | null) {
   }
 
   return value
-    .replace(/\s*\b(MPa|kPa|Pa|bar|psi)\b/gi, "")
+    .replace(/\s*\b(MPa|kPa|Pa|bar|psi|N\.m|Nm|deg)\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
 }

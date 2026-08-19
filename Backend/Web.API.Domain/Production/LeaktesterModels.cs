@@ -48,36 +48,6 @@ public class Operator
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 }
 
-public class LeakTestParameter
-{
-    [JsonPropertyName("id")]
-    public int Id { get; set; }
-
-    [JsonPropertyName("channel_no")]
-    public string ChannelNo { get; set; } = string.Empty;
-
-    [JsonPropertyName("model_parameter")]
-    public string ModelParameter { get; set; } = string.Empty;
-
-    [JsonPropertyName("item_name")]
-    public string ItemName { get; set; } = string.Empty;
-
-    [JsonPropertyName("item_value")]
-    public string ItemValue { get; set; } = string.Empty;
-
-    [JsonPropertyName("machine_names")]
-    public string? MachineNames { get; set; }
-
-    [JsonPropertyName("is_deleted")]
-    public bool? IsDeleted { get; set; }
-
-    [JsonPropertyName("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.Now;
-
-    [JsonPropertyName("updated_at")]
-    public DateTime UpdatedAt { get; set; } = DateTime.Now;
-}
-
 public class LeakTestJudgement
 {
     [JsonPropertyName("id")]
@@ -180,6 +150,84 @@ public class SystemSettingsResponse
     public string PlcIpAddress { get; set; } = string.Empty;
 }
 
+public class AssemblyWorkstation
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("workstation_code")]
+    public string WorkstationCode { get; set; } = string.Empty;
+
+    [JsonPropertyName("workstation_name")]
+    public string WorkstationName { get; set; } = string.Empty;
+
+    [JsonPropertyName("workstation_no")]
+    public int WorkstationNo { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("is_deleted")]
+    public bool? IsDeleted { get; set; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    [JsonPropertyName("updated_at")]
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+    [JsonPropertyName("tools")]
+    public List<AssemblyTool> Tools { get; set; } = [];
+}
+
+public class AssemblyTool
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("workstation_id")]
+    public int WorkstationId { get; set; }
+
+    [JsonIgnore]
+    public AssemblyWorkstation? Workstation { get; set; }
+
+    [JsonPropertyName("tool_code")]
+    public string ToolCode { get; set; } = string.Empty;
+
+    [JsonPropertyName("tool_name")]
+    public string ToolName { get; set; } = string.Empty;
+
+    [JsonPropertyName("nut_size")]
+    public string NutSize { get; set; } = string.Empty;
+
+    [JsonPropertyName("program_no")]
+    public int? ProgramNo { get; set; }
+
+    [JsonPropertyName("torque_standard")]
+    public decimal TorqueStandard { get; set; }
+
+    [JsonPropertyName("torque_min")]
+    public decimal TorqueMin { get; set; }
+
+    [JsonPropertyName("torque_max")]
+    public decimal TorqueMax { get; set; }
+
+    [JsonPropertyName("unit")]
+    public string Unit { get; set; } = "N.m";
+
+    [JsonPropertyName("sequence_no")]
+    public int SequenceNo { get; set; }
+
+    [JsonPropertyName("is_deleted")]
+    public bool? IsDeleted { get; set; }
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+
+    [JsonPropertyName("updated_at")]
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
+}
+
 public class LeakTestWorkRecord
 {
     [JsonPropertyName("id")]
@@ -219,6 +267,16 @@ public class LeakTestWorkRecord
 
     [JsonPropertyName("parameter_pressure")]
     public decimal ParameterPressure { get; set; }
+
+    [JsonPropertyName("process_no")]
+    public int? ProcessNo { get; set; }
+
+    [JsonPropertyName("step_no")]
+    public int? StepNo { get; set; }
+
+    [NotMapped]
+    [JsonPropertyName("item")]
+    public string? Item { get; set; }
 
     [JsonPropertyName("channel_no")]
     public string? ChannelNo { get; set; }
@@ -378,27 +436,6 @@ public class CreateOperatorRequest
     public bool? IsDeleted { get; set; }
 }
 
-public class CreateLeakTestParameterRequest
-{
-    [JsonPropertyName("channel_no")]
-    public string ChannelNo { get; set; } = string.Empty;
-
-    [JsonPropertyName("model_parameter")]
-    public string ModelParameter { get; set; } = string.Empty;
-
-    [JsonPropertyName("item_name")]
-    public string ItemName { get; set; } = string.Empty;
-
-    [JsonPropertyName("item_value")]
-    public string ItemValue { get; set; } = string.Empty;
-
-    [JsonPropertyName("machine_names")]
-    public string? MachineNames { get; set; }
-
-    [JsonPropertyName("is_deleted")]
-    public bool? IsDeleted { get; set; }
-}
-
 public class UpdateLeakTestJudgementRequest
 {
     [JsonPropertyName("judgement_name")]
@@ -432,19 +469,247 @@ public class UpdateSystemSettingsRequest
     public string? PlcIpAddress { get; set; }
 }
 
-public class LeakTestParameterImportResult
+public class CreateAssemblyWorkstationRequest
 {
-    [JsonPropertyName("imported")]
-    public int Imported { get; set; }
+    [JsonPropertyName("workstation_code")]
+    public string WorkstationCode { get; set; } = string.Empty;
 
-    [JsonPropertyName("updated")]
-    public int Updated { get; set; }
+    [JsonPropertyName("workstation_name")]
+    public string WorkstationName { get; set; } = string.Empty;
+
+    [JsonPropertyName("workstation_no")]
+    public int WorkstationNo { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("is_deleted")]
+    public bool? IsDeleted { get; set; }
+}
+
+public class CreateAssemblyToolRequest
+{
+    [JsonPropertyName("workstation_id")]
+    public int WorkstationId { get; set; }
+
+    [JsonPropertyName("tool_code")]
+    public string ToolCode { get; set; } = string.Empty;
+
+    [JsonPropertyName("tool_name")]
+    public string ToolName { get; set; } = string.Empty;
+
+    [JsonPropertyName("nut_size")]
+    public string NutSize { get; set; } = string.Empty;
+
+    [JsonPropertyName("program_no")]
+    public int? ProgramNo { get; set; }
+
+    [JsonPropertyName("torque_standard")]
+    public decimal TorqueStandard { get; set; }
+
+    [JsonPropertyName("torque_min")]
+    public decimal TorqueMin { get; set; }
+
+    [JsonPropertyName("torque_max")]
+    public decimal TorqueMax { get; set; }
+
+    [JsonPropertyName("unit")]
+    public string? Unit { get; set; }
+
+    [JsonPropertyName("sequence_no")]
+    public int SequenceNo { get; set; }
+
+    [JsonPropertyName("is_deleted")]
+    public bool? IsDeleted { get; set; }
+}
+
+public class TorqueMasterModelResponse
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("model_name")]
+    public string ModelName { get; set; } = string.Empty;
+}
+
+public class TorqueMasterSpecResponse
+{
+    [JsonPropertyName("min")]
+    public decimal? Min { get; set; }
+
+    [JsonPropertyName("max")]
+    public decimal? Max { get; set; }
+
+    [JsonPropertyName("unit")]
+    public string? Unit { get; set; }
+}
+
+public class TorqueMasterRowResponse
+{
+    [JsonPropertyName("id")]
+    public long Id { get; set; }
+
+    [JsonPropertyName("process_no")]
+    public int? ProcessNo { get; set; }
+
+    [JsonPropertyName("step_no")]
+    public int? StepNo { get; set; }
+
+    [JsonPropertyName("item")]
+    public string? Item { get; set; }
+
+    [JsonPropertyName("tool_type")]
+    public string ToolType { get; set; } = "Visual Inspect";
+
+    [JsonPropertyName("tool_index")]
+    public int? ToolIndex { get; set; }
+
+    [JsonPropertyName("item_check")]
+    public string? ItemCheck { get; set; }
+
+    [JsonPropertyName("nut_spec")]
+    public string? NutSpec { get; set; }
+
+    [JsonPropertyName("nut_usage")]
+    public int? NutUsage { get; set; }
+
+    [JsonPropertyName("tool")]
+    public int? Tool { get; set; }
+
+    [JsonPropertyName("sub_tool")]
+    public int? SubTool { get; set; }
+
+    [JsonPropertyName("work_type")]
+    public string? WorkType { get; set; }
+
+    [JsonPropertyName("work_address")]
+    public int? WorkAddress { get; set; }
+
+    [JsonPropertyName("model_page")]
+    public string? ModelPage { get; set; }
+
+    [JsonPropertyName("page")]
+    public int? Page { get; set; }
+
+    [JsonPropertyName("specs")]
+    public Dictionary<int, TorqueMasterSpecResponse> Specs { get; set; } = [];
+}
+
+public class TorqueMasterResponse
+{
+    [JsonPropertyName("models")]
+    public List<TorqueMasterModelResponse> Models { get; set; } = [];
+
+    [JsonPropertyName("rows")]
+    public List<TorqueMasterRowResponse> Rows { get; set; } = [];
+}
+
+public class UpdateTorqueMasterRowRequest
+{
+    [JsonPropertyName("process_no")]
+    public int? ProcessNo { get; set; }
+
+    [JsonPropertyName("step_no")]
+    public int? StepNo { get; set; }
+
+    [JsonPropertyName("model_id")]
+    public int? ModelId { get; set; }
+
+    [JsonPropertyName("item")]
+    public string? Item { get; set; }
+
+    [JsonPropertyName("tool_type")]
+    public string? ToolType { get; set; }
+
+    [JsonPropertyName("item_check")]
+    public string? ItemCheck { get; set; }
+
+    [JsonPropertyName("nut_spec")]
+    public string? NutSpec { get; set; }
+
+    [JsonPropertyName("nut_usage")]
+    public int? NutUsage { get; set; }
+
+    [JsonPropertyName("tool")]
+    public int? Tool { get; set; }
+
+    [JsonPropertyName("min")]
+    public decimal? Min { get; set; }
+
+    [JsonPropertyName("max")]
+    public decimal? Max { get; set; }
+
+    [JsonPropertyName("unit")]
+    public string? Unit { get; set; }
+
+    [JsonPropertyName("model_page")]
+    public string? ModelPage { get; set; }
+
+    [JsonPropertyName("page")]
+    public int? Page { get; set; }
+}
+
+public class CreateTorqueMasterRowRequest
+{
+    [JsonPropertyName("model_id")]
+    public int ModelId { get; set; }
+
+    [JsonPropertyName("process_no")]
+    public int? ProcessNo { get; set; }
+
+    [JsonPropertyName("step_no")]
+    public int? StepNo { get; set; }
+
+    [JsonPropertyName("item")]
+    public string Item { get; set; } = string.Empty;
+
+    [JsonPropertyName("tool_type")]
+    public string ToolType { get; set; } = "Visual Inspect";
+
+    [JsonPropertyName("item_check")]
+    public string? ItemCheck { get; set; }
+
+    [JsonPropertyName("nut_spec")]
+    public string? NutSpec { get; set; }
+
+    [JsonPropertyName("nut_usage")]
+    public int? NutUsage { get; set; }
+
+    [JsonPropertyName("tool")]
+    public int? Tool { get; set; }
+
+    [JsonPropertyName("min")]
+    public decimal? Min { get; set; }
+
+    [JsonPropertyName("max")]
+    public decimal? Max { get; set; }
+
+    [JsonPropertyName("unit")]
+    public string? Unit { get; set; }
+
+    [JsonPropertyName("model_page")]
+    public string? ModelPage { get; set; }
+
+    [JsonPropertyName("page")]
+    public int? Page { get; set; }
+}
+
+public class TorqueMasterImportResult
+{
+    [JsonPropertyName("rows_read")]
+    public int RowsRead { get; set; }
+
+    [JsonPropertyName("standards_saved")]
+    public int StandardsSaved { get; set; }
+
+    [JsonPropertyName("specs_saved")]
+    public int SpecsSaved { get; set; }
+
+    [JsonPropertyName("models_saved")]
+    public int ModelsSaved { get; set; }
 
     [JsonPropertyName("skipped")]
     public int Skipped { get; set; }
-
-    [JsonPropertyName("channels")]
-    public int Channels { get; set; }
 }
 
 public class CreateLeakTestWorkRecordRequest
@@ -472,6 +737,18 @@ public class CreateLeakTestWorkRecordRequest
 
     [JsonPropertyName("parameter_pressure")]
     public decimal ParameterPressure { get; set; }
+
+    [JsonPropertyName("process_no")]
+    public int? ProcessNo { get; set; }
+
+    [JsonPropertyName("process_number")]
+    public int? ProcessNumber { get; set; }
+
+    [JsonPropertyName("step_no")]
+    public int? StepNo { get; set; }
+
+    [JsonPropertyName("step_number")]
+    public int? StepNumber { get; set; }
 
     [JsonPropertyName("channel_no")]
     public string? ChannelNo { get; set; }
@@ -515,6 +792,18 @@ public class CreateHmiLeakTestWorkRecordRequest
 
     [JsonPropertyName("operator")]
     public string? Operator { get; set; }
+
+    [JsonPropertyName("process_no")]
+    public int? ProcessNo { get; set; }
+
+    [JsonPropertyName("process_number")]
+    public int? ProcessNumber { get; set; }
+
+    [JsonPropertyName("step_no")]
+    public int? StepNo { get; set; }
+
+    [JsonPropertyName("step_number")]
+    public int? StepNumber { get; set; }
 
     [JsonPropertyName("channel_no")]
     public string? ChannelNo { get; set; }

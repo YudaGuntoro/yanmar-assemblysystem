@@ -1,4 +1,4 @@
-USE yanmarleaktest;
+USE yanmarassy;
 
 CREATE TABLE IF NOT EXISTS leak_test_judgements (
     id INT AUTO_INCREMENT PRIMARY KEY,

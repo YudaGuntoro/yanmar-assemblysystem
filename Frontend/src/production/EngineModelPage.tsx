@@ -1,11 +1,12 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import ActionIconButton from "@/components/common/ActionIconButton";
 import CreateButton from "@/components/common/CreateButton";
 import DataTable, { type DataTableColumn } from "@/components/common/DataTable";
 import { ConfirmModal } from "@/components/ui/modal/ConfirmModal";
 import { Modal } from "@/components/ui/modal";
-import { CloseIcon, TrashBinIcon } from "@/icons";
+import { CloseIcon } from "@/icons";
 import { apiGet, apiPost, apiRequest } from "@/lib/api";
 import type { EngineModel } from "./types";
 
@@ -62,25 +63,22 @@ export default function EngineModelPage() {
       header: "Action",
       render: (_value, row) => (
         <div className="flex justify-end gap-2">
-          <button
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+          <ActionIconButton
+            aria-label={`Update ${row.engine_model}`}
+            icon="edit"
             onClick={() => {
               setEditingEngineModel(row);
               setIsCreateModalOpen(true);
             }}
-            type="button"
-          >
-            Update
-          </button>
+            title="Update"
+          />
           {!row.is_deleted ? (
-            <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+            <ActionIconButton
+              aria-label={`Delete ${row.engine_model}`}
+              icon="delete"
               onClick={() => setDeletingEngineModel(row)}
-              type="button"
-            >
-              <TrashBinIcon className="size-3.5" />
-              Delete
-            </button>
+              title="Delete"
+            />
           ) : null}
         </div>
       ),
@@ -101,7 +99,7 @@ export default function EngineModelPage() {
     try {
       setItems(await apiGet<EngineModel[]>(`/api/leaktester/engine-models${filterQuery}`));
     } catch (err) {
-      setMessage({ kind: "error", text: err instanceof Error ? err.message : "Failed to load engine model data." });
+        setMessage({ kind: "error", text: err instanceof Error ? err.message : "Failed to load Engine Model data." });
     }
   }, [filterQuery]);
 
@@ -149,7 +147,7 @@ export default function EngineModelPage() {
       formElement.reset();
       setIsCreateModalOpen(false);
       setEditingEngineModel(null);
-      setMessage({ kind: "ok", text: editingEngineModel ? "Engine model updated." : "Engine model saved." });
+        setMessage({ kind: "ok", text: editingEngineModel ? "Engine Model updated." : "Engine Model saved." });
       await load();
     } catch (err) {
       setMessage({ kind: "error", text: err instanceof Error ? err.message : "Failed to save engine model." });
@@ -170,13 +168,13 @@ export default function EngineModelPage() {
         method: "DELETE",
       });
       setDeletingEngineModel(null);
-      setMessage({ kind: "ok", text: "Engine model deleted." });
+      setMessage({ kind: "ok", text: "Engine Model deleted." });
       await load();
     } catch (err) {
       const text = err instanceof Error ? err.message : "Failed to delete engine model.";
       setDeletingEngineModel(null);
       if (text.toLowerCase().includes("leaktester work record")) {
-        setDeleteBlockedMessage("Tidak bisa dihapus, karena ada data di Leaktester Work Record.");
+        setDeleteBlockedMessage("Tidak bisa dihapus, karena ada data di Nut Runner Work Record.");
       } else {
         setMessage({ kind: "error", text });
       }
@@ -231,9 +229,9 @@ export default function EngineModelPage() {
           }
           columns={columns}
           clearFiltersDisabled={!hasFilters}
-          clearFiltersLabel="Clear engine model filter"
+          clearFiltersLabel="Clear Engine Model filter"
           data={paginatedItems}
-          emptyMessage="No engine model data."
+          emptyMessage="No Engine Model data."
           limitOptions={PAGE_SIZE_OPTIONS}
           minWidth="900px"
           onLimitChange={(limit) => {
@@ -253,7 +251,7 @@ export default function EngineModelPage() {
             totalPage: totalPages,
           }}
           rowKey="id"
-          searchPlaceholder="Search engine model or description"
+          searchPlaceholder="Search Engine Model or description"
           searchValue={searchText}
         />
       </div>
@@ -290,7 +288,7 @@ export default function EngineModelPage() {
           <div className="grid gap-5 px-6 py-4">
             <label className="text-sm font-bold text-white">
               Engine Model
-              <input className={modalInputClass} defaultValue={editingEngineModel?.engine_model ?? ""} name="engine_model" placeholder="Enter engine model" required />
+              <input className={modalInputClass} defaultValue={editingEngineModel?.engine_model ?? ""} name="engine_model" placeholder="Enter Engine Model" required />
             </label>
             <label className="text-sm font-bold text-white">
               Description
@@ -336,7 +334,7 @@ export default function EngineModelPage() {
         isDestructive
         isLoading={busy}
         isOpen={Boolean(deletingEngineModel)}
-        message={deletingEngineModel ? `Are you sure you want to delete engine model ${deletingEngineModel.engine_model}? This engine model will be marked as deleted and hidden from active lists.` : ""}
+        message={deletingEngineModel ? `Are you sure you want to delete Engine Model ${deletingEngineModel.engine_model}? This Engine Model will be marked as deleted and hidden from active lists.` : ""}
         onClose={() => {
           if (!busy) setDeletingEngineModel(null);
         }}

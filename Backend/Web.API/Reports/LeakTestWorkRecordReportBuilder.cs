@@ -25,7 +25,7 @@ public static class LeakTestWorkRecordReportBuilder
         FillRecord(worksheet, record, logoPath);
 
         workbook.Properties.Title = $"Leak Test Result - {record.EngineNumber}";
-        workbook.Properties.Author = "Leaktester Work Record";
+        workbook.Properties.Author = "Assembly System";
         workbook.Properties.Company = "PT. Yanmar Diesel Indonesia";
         workbook.Properties.Subject = "Leak Test Work Record Export";
         workbook.Properties.Created = DateTime.Now;

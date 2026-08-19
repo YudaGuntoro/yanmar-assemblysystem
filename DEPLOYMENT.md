@@ -1,96 +1,95 @@
-# On-Premise Deployment
+# Assembly System Local Deployment
 
-This project is intended to run against the on-premise MySQL database.
+Catatan ini untuk menjalankan project Berkut / Assembly System di mesin lokal Windows.
 
-## Requirements
-
-- Windows Server or Windows workstation
-- .NET 8 Runtime or SDK
-- Node.js 20+
-- MySQL 8 at `127.0.0.1:3306`
-
-## Database
-
-Connection string:
-
-```text
-Server=127.0.0.1;Port=3306;User ID=root;Password=YOUR_PASSWORD;Database=yanmarleaktest;SslMode=None;AllowPublicKeyRetrieval=True;
-```
-
-Apply the schema:
+## Lokasi Project
 
 ```powershell
-mysql -h 127.0.0.1 -P 3306 -u root -pYOUR_PASSWORD < Backend\database\yanmarleaktest.sql
+cd "D:\Project\Private\PT.Yanmar Diesel Indonesia\Assembly System"
 ```
 
-## API
+## Port Yang Dipakai
+
+- Backend API: `http://localhost:5241`
+- Frontend: `http://127.0.0.1:3002`
+- Database: MySQL `127.0.0.1:3306`, database `yanmarassy`
+
+## Stop Project
+
+Jalankan ini sebelum build atau run ulang supaya port dan file `.next\standalone` tidak terkunci.
 
 ```powershell
-$env:ASPNETCORE_ENVIRONMENT="Development"
-$env:ConnectionStrings__DefaultConnection="Server=127.0.0.1;Port=3306;User ID=root;Password=YOUR_PASSWORD;Database=yanmarleaktest;SslMode=None;AllowPublicKeyRetrieval=True;"
-dotnet run --project Backend\Web.API\Web.API.csproj --urls http://localhost:5241
+$ports = @(3002, 5241)
+foreach ($port in $ports) {
+  Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+}
 ```
 
-Swagger:
-
-```text
-http://localhost:5241/swagger
-```
-
-## Frontend
+## Build Backend
 
 ```powershell
-Set-Location Frontend
-npm install
-$env:NEXT_PUBLIC_API_BASE_URL="http://localhost:5241"
-npm run dev
+dotnet build Backend\Web.API\Web.API.csproj --no-restore
 ```
 
-Open:
+## Build Frontend
 
-```text
-http://localhost:3000
+```powershell
+cd "D:\Project\Private\PT.Yanmar Diesel Indonesia\Assembly System\Frontend"
+npm run build
+Copy-Item -Recurse -Force .next\static .next\standalone\.next\static
+Copy-Item -Recurse -Force public .next\standalone\public
+cd ..
 ```
 
-## Docker VPS
+## Run Backend
 
-Initial clone:
+```powershell
+cd "D:\Project\Private\PT.Yanmar Diesel Indonesia\Assembly System"
 
-```bash
-sudo mkdir -p /var/www/leaktest-system
-sudo chown -R "$USER":"$USER" /var/www/leaktest-system
-git clone https://github.com/YudaGuntoro/leaktest-system.git /var/www/leaktest-system
-cd /var/www/leaktest-system
-cp .env.example .env
-nano .env
+$apiCmd = 'cmd.exe /c set ConnectionStrings__DefaultConnection=Server=127.0.0.1;Port=3306;User ID=root;Password=root_native;Database=yanmarassy;SslMode=None;AllowPublicKeyRetrieval=True;&& set FRONTEND_ORIGIN=http://localhost:3000&& set FRONTEND_ORIGIN_ALT=http://127.0.0.1:3000&& set JWT_ISSUER=AssemblySystem&& set JWT_AUDIENCE=AssemblySystem.Frontend&& set JWT_SIGNING_KEY=AssemblySystem-Local-Jwt-Signing-Key-2026-Change-Me&& set JWT_EXPIRES_HOURS=8&& set SWAGGER_ENABLED=true&& set ASPNETCORE_URLS=http://localhost:5241&& dotnet Backend\Web.API\bin\Debug\net8.0\Web.API.dll'
+
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+  CommandLine = $apiCmd
+  CurrentDirectory = 'D:\Project\Private\PT.Yanmar Diesel Indonesia\Assembly System'
+} | Out-Null
 ```
 
-Required VPS `.env` values:
+## Run Frontend
 
-```env
-FRONTEND_ORIGIN=https://leaktest.your-domain.com
-FRONTEND_ORIGIN_ALT=http://127.0.0.1:8091
-NEXT_PUBLIC_API_BASE_URL=
-SERVER_API_BASE_URL=http://api:8080
-FRONTEND_HOST_PORT=8091
-API_HOST_PORT=5274
-MYSQL_CONNECTION_STRING=Server=host.docker.internal;Port=3306;User ID=root;Password=YOUR_PASSWORD;Database=yanmarleaktest;SslMode=None;AllowPublicKeyRetrieval=True;
-JWT_SIGNING_KEY=replace-with-a-long-random-leaktester-secret
-SWAGGER_ENABLED=false
+```powershell
+cd "D:\Project\Private\PT.Yanmar Diesel Indonesia\Assembly System"
+
+$frontCmd = 'cmd.exe /c set NEXT_PUBLIC_API_BASE_URL=&& set SERVER_API_BASE_URL=http://localhost:5241&& set PORT=3002&& node server.js'
+
+Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+  CommandLine = $frontCmd
+  CurrentDirectory = 'D:\Project\Private\PT.Yanmar Diesel Indonesia\Assembly System\Frontend\.next\standalone'
+} | Out-Null
 ```
 
-Deploy:
+## Quick Check
 
-```bash
-cd /var/www/leaktest-system
-git pull --ff-only origin main
-docker compose -f docker-compose.vps.yml --env-file .env up -d --build
-docker compose -f docker-compose.vps.yml --env-file .env ps
+```powershell
+Invoke-WebRequest -UseBasicParsing http://localhost:5241/swagger -TimeoutSec 10 | Select-Object StatusCode
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3002/torque-master -TimeoutSec 10 | Select-Object StatusCode
 ```
 
-Deploy with MQTT worker:
+Expected result: both return `200`.
 
-```bash
-docker compose -f docker-compose.vps.yml --env-file .env --profile worker up -d --build
-docker compose -f docker-compose.vps.yml --env-file .env --profile worker ps
-```
+## Run Cepat Besok
+
+Urutan cepat ketika user minta "run project berkut":
+
+1. Stop project dengan command `Stop Project`.
+2. Build backend.
+3. Build frontend dan copy static/public ke standalone.
+4. Run backend.
+5. Run frontend.
+6. Check URL `http://127.0.0.1:3002`.
+
+## Troubleshooting
+
+Jika frontend build gagal dengan `EBUSY .next\standalone`, berarti frontend masih jalan. Jalankan `Stop Project`, lalu build ulang.
+
+Jika login menampilkan `NetworkError when attempting to fetch resource`, biasanya backend belum jalan di port `5241`. Jalankan `Run Backend`, lalu refresh browser.

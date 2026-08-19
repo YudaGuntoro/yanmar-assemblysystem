@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useMemo, useState } from "react";
+import ActionIconButton from "@/components/common/ActionIconButton";
 import DataTable, { DataTableColumn } from "@/components/common/DataTable";
 import CreateButton from "@/components/common/CreateButton";
 import { useStockIns } from "@/hooks/useStockIns";
 import StockInService, { StockIn } from "@/services/StockInService";
 import { useToast } from "@/context/ToastContext";
-import { PencilIcon, TrashBinIcon } from "@/icons";
 import { ConfirmModal } from "@/components/ui/modal";
 import StockInModal from "./StockInModal";
 import DatePicker from "@/components/form/date-picker";
@@ -163,20 +163,18 @@ export default function StockInTable() {
         align: "center",
         render: (_, row) => (
           <div className="flex items-center justify-center gap-3">
-            <button
+            <ActionIconButton
+              aria-label={`Edit ${row.code}`}
+              icon="edit"
               onClick={() => handleUpdate(row)}
-              className="text-warning-500 hover:text-warning-600 dark:text-warning-400 dark:hover:text-warning-500 transition-colors"
               title="Edit"
-            >
-              <PencilIcon className="w-5 h-5 fill-current" />
-            </button>
-            <button
+            />
+            <ActionIconButton
+              aria-label={`Delete ${row.code}`}
+              icon="delete"
               onClick={() => handleDeleteClick(row)}
-              className="text-error-500 hover:text-error-600 dark:text-error-400 dark:hover:text-error-500 transition-colors"
               title="Delete"
-            >
-              <TrashBinIcon className="w-5 h-5 fill-current" />
-            </button>
+            />
           </div>
         ),
       },

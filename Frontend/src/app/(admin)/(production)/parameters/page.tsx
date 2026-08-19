@@ -1,8 +1,5 @@
-import type { Metadata } from "next";
-import ParameterPage from "@/production/ParameterPage";
+import { notFound } from "next/navigation";
 
-export const metadata: Metadata = { title: "Parameter | PT. Yanmar Diesel Indonesia" };
-
-export default function ParametersRoute() {
-  return <ParameterPage />;
+export default function RemovedParametersPage() {
+  notFound();
 }

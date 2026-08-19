@@ -1,12 +1,12 @@
--- Leaktester Work Record - schema only bootstrap
+-- Assembly System - schema only bootstrap
 -- Creates database and tables without demo/history records.
 -- MySQL 8+
 
-CREATE DATABASE IF NOT EXISTS yanmarleaktest
+CREATE DATABASE IF NOT EXISTS yanmarassy
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
-USE yanmarleaktest;
+USE yanmarassy;
 
 CREATE TABLE IF NOT EXISTS roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -56,9 +56,9 @@ CREATE TABLE IF NOT EXISTS users (
 INSERT INTO users
     (id, username, full_name, email, roles_id, is_active, password_hash, password_salt)
 VALUES
-    (1, 'admin', 'Leaktester Work Record Administrator', 'admin@leaktester.local', 1, 1,
+    (1, 'admin', 'Assembly System Administrator', 'admin@assembly.local', 1, 1,
      'mV/QhZOhh7mvmWj0P1RgeXm3hZB1AkKHY5jfEcrC7PE=', 'Y21tcy1hZG1pbi1zYWx0LXYx'),
-    (2, 'root', 'Leaktester Work Record Root', 'root@leaktester.local', 1, 1,
+    (2, 'root', 'Assembly System Root', 'root@assembly.local', 1, 1,
      'QzApLclLs39Wg6pGId5HXwbyiH5QdA41S8X40bj4Mm4=', 'eWFubWFyLXJvb3QtdjEhIQ==')
 ON DUPLICATE KEY UPDATE
     username = VALUES(username),
@@ -87,21 +87,6 @@ CREATE TABLE IF NOT EXISTS operators (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_operators_operator_code (operator_code),
     KEY ix_operators_operator_name (operator_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS leak_test_parameters (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    channel_no VARCHAR(20) NOT NULL,
-    model_parameter VARCHAR(150) NOT NULL,
-    item_name VARCHAR(120) NOT NULL,
-    item_value VARCHAR(80) NOT NULL,
-    machine_names VARCHAR(1000) NULL,
-    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_leak_test_parameters_channel_item (channel_no, item_name),
-    KEY ix_leak_test_parameters_channel_no (channel_no),
-    KEY ix_leak_test_parameters_model_parameter (model_parameter)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS leak_test_judgements (
@@ -205,7 +190,7 @@ WHERE pressure.unit_category = 'pressure'
   AND cycle_time.unit_category = 'cycle_time'
   AND cycle_time.unit_symbol = 's'
 ON DUPLICATE KEY UPDATE
-    id = id;
+    id = VALUES(id);
 
 CREATE TABLE IF NOT EXISTS leak_test_work_records (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

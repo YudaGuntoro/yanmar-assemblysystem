@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ApiListResponse } from "@/services/ParameterService";
+import type { ApiListResponse } from "@/services/apiTypes";
 import ProcessLogService, {
   ProcessLog,
   ProcessLogQuery,

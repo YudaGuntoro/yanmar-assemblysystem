@@ -20,7 +20,7 @@ public static class ReworkEngineRecordReportBuilder
         FillRecord(worksheet, record, logoPath);
 
         workbook.Properties.Title = $"Manual Leaktest - {record.EngineNumber}";
-        workbook.Properties.Author = "Leaktester Work Record";
+        workbook.Properties.Author = "Assembly System";
         workbook.Properties.Company = "PT. Yanmar Diesel Indonesia";
         workbook.Properties.Subject = "Manual Leaktest Rework Engine Export";
         workbook.Properties.Created = DateTime.Now;

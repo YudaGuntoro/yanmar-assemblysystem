@@ -1,11 +1,11 @@
--- Fresh database bootstrap for Leaktester Work Record
+-- Fresh database bootstrap for Assembly System
 -- PT. Yanmar Diesel Indonesia / MySQL 8
 
-CREATE DATABASE IF NOT EXISTS yanmarleaktest
+CREATE DATABASE IF NOT EXISTS yanmarassy
     CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
-USE yanmarleaktest;
+USE yanmarassy;
 
 CREATE TABLE IF NOT EXISTS roles (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -54,9 +54,9 @@ CREATE TABLE IF NOT EXISTS users (
 INSERT IGNORE INTO users
     (id, username, full_name, email, roles_id, is_active, password_hash, password_salt)
 VALUES
-    (1, 'admin', 'Leaktester Work Record Administrator', 'admin@leaktester.local', 1, 1,
+    (1, 'admin', 'Assembly System Administrator', 'admin@assembly.local', 1, 1,
      'mV/QhZOhh7mvmWj0P1RgeXm3hZB1AkKHY5jfEcrC7PE=', 'Y21tcy1hZG1pbi1zYWx0LXYx'),
-    (2, 'root', 'Leaktester Work Record Root', 'root@leaktester.local', 1, 1,
+    (2, 'root', 'Assembly System Root', 'root@assembly.local', 1, 1,
      'QzApLclLs39Wg6pGId5HXwbyiH5QdA41S8X40bj4Mm4=', 'eWFubWFyLXJvb3QtdjEhIQ==');
 
 SOURCE Backend/Web.API.Persistence/Migrations/20260729_003_engine_models.sql;
@@ -68,7 +68,6 @@ SOURCE Backend/Web.API.Persistence/Migrations/20260807_001_operators.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260807_002_rework_engine_records.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260807_003_demo_dashboard_work_records.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260807_004_demo_dashboard_monthly_volume.sql;
-SOURCE Backend/Web.API.Persistence/Migrations/20260807_005_leak_test_parameters.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260807_006_hmi_work_record_payload.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260810_001_system_settings_units.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260810_002_history_operator_snapshot.sql;
@@ -82,3 +81,5 @@ SOURCE Backend/Web.API.Persistence/Migrations/20260810_009_work_record_judgement
 SOURCE Backend/Web.API.Persistence/Migrations/20260810_010_drop_work_record_judgement_name.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260810_011_drop_work_record_result.sql;
 SOURCE Backend/Web.API.Persistence/Migrations/20260813_001_judgement_master_20_codes.sql;
+SOURCE Backend/Web.API.Persistence/Migrations/20260818_001_assembly_estic_demo_master.sql;
+SOURCE Backend/Web.API.Persistence/Migrations/20260818_002_assembly_workstation_master.sql;

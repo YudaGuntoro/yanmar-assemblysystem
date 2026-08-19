@@ -7,10 +7,10 @@ import { ToastProvider } from '@/context/ToastContext';
 
 export const metadata: Metadata = {
   title: {
-    default: "Leaktester Work Record",
-    template: "%s | Leaktester Work Record",
+    default: "Assembly System",
+    template: "%s | Assembly System",
   },
-  description: "Leaktester Work Record for PT. Yanmar Diesel Indonesia",
+  description: "Assembly System for PT. Yanmar Diesel Indonesia",
   icons: {
     apple: "/yanmar-icon.svg?v=yanmar",
     icon: "/yanmar-icon.svg?v=yanmar",

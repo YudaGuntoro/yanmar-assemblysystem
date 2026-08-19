@@ -1,6 +1,8 @@
 using Serilog;
 using Web.API;
 
+LoadLocalEnvironmentFile();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog before building the app
@@ -34,3 +36,40 @@ app.UseWebApiPipeline();
 
 // Run the application
 app.Run();
+
+static void LoadLocalEnvironmentFile()
+{
+    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+    while (current is not null)
+    {
+        var envPath = Path.Combine(current.FullName, ".env");
+        if (File.Exists(envPath))
+        {
+            foreach (var rawLine in File.ReadAllLines(envPath))
+            {
+                var line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith('#'))
+                {
+                    continue;
+                }
+
+                var separatorIndex = line.IndexOf('=');
+                if (separatorIndex <= 0)
+                {
+                    continue;
+                }
+
+                var key = line[..separatorIndex].Trim();
+                var value = line[(separatorIndex + 1)..].Trim();
+                if (!string.IsNullOrWhiteSpace(key) && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(key)))
+                {
+                    Environment.SetEnvironmentVariable(key, value);
+                }
+            }
+
+            return;
+        }
+
+        current = current.Parent;
+    }
+}

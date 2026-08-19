@@ -14,10 +14,11 @@ public class AppDbContext : DbContext
     public DbSet<AppRole> Roles => Set<AppRole>();
     public DbSet<EngineModel> EngineModels => Set<EngineModel>();
     public DbSet<Operator> Operators => Set<Operator>();
-    public DbSet<LeakTestParameter> LeakTestParameters => Set<LeakTestParameter>();
     public DbSet<LeakTestJudgement> LeakTestJudgements => Set<LeakTestJudgement>();
     public DbSet<MeasurementUnit> MeasurementUnits => Set<MeasurementUnit>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<AssemblyWorkstation> AssemblyWorkstations => Set<AssemblyWorkstation>();
+    public DbSet<AssemblyTool> AssemblyTools => Set<AssemblyTool>();
     public DbSet<LeakTestWorkRecord> LeakTestWorkRecords => Set<LeakTestWorkRecord>();
     public DbSet<ReworkEngineRecord> ReworkEngineRecords => Set<ReworkEngineRecord>();
 
@@ -87,24 +88,6 @@ public class AppDbContext : DbContext
             entity.HasIndex(x => x.OperatorName);
         });
 
-        modelBuilder.Entity<LeakTestParameter>(entity =>
-        {
-            entity.ToTable("leak_test_parameters");
-            entity.HasKey(x => x.Id);
-            entity.Property(x => x.Id).HasColumnName("id");
-            entity.Property(x => x.ChannelNo).HasColumnName("channel_no").HasMaxLength(20).IsRequired();
-            entity.Property(x => x.ModelParameter).HasColumnName("model_parameter").HasMaxLength(150).IsRequired();
-            entity.Property(x => x.ItemName).HasColumnName("item_name").HasMaxLength(120).IsRequired();
-            entity.Property(x => x.ItemValue).HasColumnName("item_value").HasMaxLength(80).IsRequired();
-            entity.Property(x => x.MachineNames).HasColumnName("machine_names").HasMaxLength(1000);
-            entity.Property(x => x.IsDeleted).HasColumnName("is_deleted");
-            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
-            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
-            entity.HasIndex(x => new { x.ChannelNo, x.ItemName }).IsUnique();
-            entity.HasIndex(x => x.ChannelNo);
-            entity.HasIndex(x => x.ModelParameter);
-        });
-
         modelBuilder.Entity<LeakTestJudgement>(entity =>
         {
             entity.ToTable("leak_test_judgements");
@@ -151,6 +134,46 @@ public class AppDbContext : DbContext
             entity.HasOne(x => x.CycleTimeUnit).WithMany().HasForeignKey(x => x.CycleTimeUnitId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<AssemblyWorkstation>(entity =>
+        {
+            entity.ToTable("assembly_workstations");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.WorkstationCode).HasColumnName("workstation_code").HasMaxLength(50).IsRequired();
+            entity.Property(x => x.WorkstationName).HasColumnName("workstation_name").HasMaxLength(120).IsRequired();
+            entity.Property(x => x.WorkstationNo).HasColumnName("workstation_no");
+            entity.Property(x => x.Description).HasColumnName("description").HasMaxLength(255);
+            entity.Property(x => x.IsDeleted).HasColumnName("is_deleted");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            entity.HasIndex(x => x.WorkstationCode).IsUnique();
+            entity.HasIndex(x => x.WorkstationNo);
+        });
+
+        modelBuilder.Entity<AssemblyTool>(entity =>
+        {
+            entity.ToTable("assembly_tools");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.WorkstationId).HasColumnName("workstation_id");
+            entity.Property(x => x.ToolCode).HasColumnName("tool_code").HasMaxLength(50).IsRequired();
+            entity.Property(x => x.ToolName).HasColumnName("tool_name").HasMaxLength(120).IsRequired();
+            entity.Property(x => x.NutSize).HasColumnName("nut_size").HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ProgramNo).HasColumnName("program_no");
+            entity.Property(x => x.TorqueStandard).HasColumnName("torque_standard").HasPrecision(8, 2);
+            entity.Property(x => x.TorqueMin).HasColumnName("torque_min").HasPrecision(8, 2);
+            entity.Property(x => x.TorqueMax).HasColumnName("torque_max").HasPrecision(8, 2);
+            entity.Property(x => x.Unit).HasColumnName("unit").HasMaxLength(20).IsRequired();
+            entity.Property(x => x.SequenceNo).HasColumnName("sequence_no");
+            entity.Property(x => x.IsDeleted).HasColumnName("is_deleted");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            entity.HasOne(x => x.Workstation).WithMany(x => x.Tools).HasForeignKey(x => x.WorkstationId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.WorkstationId, x.ToolCode }).IsUnique();
+            entity.HasIndex(x => x.NutSize);
+            entity.HasIndex(x => x.SequenceNo);
+        });
+
         modelBuilder.Entity<LeakTestWorkRecord>(entity =>
         {
             entity.ToTable("leak_test_work_records");
@@ -163,6 +186,8 @@ public class AppDbContext : DbContext
             entity.Property(x => x.MachineName).HasColumnName("machine_name").HasMaxLength(150).IsRequired();
             entity.Property(x => x.OperatorName).HasColumnName("operator_name").HasMaxLength(150);
             entity.Property(x => x.ParameterPressure).HasColumnName("parameter_pressure").HasPrecision(8, 2);
+            entity.Property(x => x.ProcessNo).HasColumnName("process_no");
+            entity.Property(x => x.StepNo).HasColumnName("step_no");
             entity.Property(x => x.ChannelNo).HasColumnName("channel_no").HasMaxLength(20);
             entity.Property(x => x.PressSetUp).HasColumnName("press_set_up").HasPrecision(8, 2);
             entity.Property(x => x.PressSetLow).HasColumnName("press_set_low").HasPrecision(8, 2);

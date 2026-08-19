@@ -64,7 +64,7 @@ export default function FormManualPage({ publicAccess = false }: FormManualPageP
   const [resultFilter, setResultFilter] = useState<"" | LeakTestResult>("");
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [unitSettings, setUnitSettings] = useState<UnitSettings>(() => getUnitSettings());
-  const pressureUnit = unitSettings.pressureUnit.trim() || "MPa";
+  const pressureUnit = unitSettings.pressureUnit.trim() || "N.m";
 
   useEffect(() => {
     let ignore = false;
@@ -132,9 +132,9 @@ export default function FormManualPage({ publicAccess = false }: FormManualPageP
     { key: "rework_date", header: "Date", render: (value) => displayDate(String(value)) },
     { key: "rework_time", header: "Time", render: (value) => displayTime(String(value)) },
     { key: "parameter_channel_no", header: "Channel", render: (_value, row) => displayOptional(row.parameter_channel_no) },
-    { key: "parameter_pressure", header: `Parameter (${pressureUnit})`, render: (value) => displayNumber(Number(value)) },
-    { key: "parameter_limit", header: `Pressure Limit (TP LL ~ TP UL) (${pressureUnit})`, render: (_value, row) => displayUnitlessText(row.parameter_limit) },
-    { key: "pressure_input", header: `Input (${pressureUnit})`, render: (value) => displayNumber(Number(value)) },
+    { key: "parameter_pressure", header: `Torque Setting (${pressureUnit})`, render: (value) => displayNumber(Number(value)) },
+    { key: "parameter_limit", header: `Torque Limit (${pressureUnit})`, render: (_value, row) => displayUnitlessText(row.parameter_limit) },
+    { key: "pressure_input", header: `Torque Actual (${pressureUnit})`, render: (value) => displayNumber(Number(value)) },
     {
       key: "result",
       header: "Result",
@@ -309,11 +309,11 @@ export default function FormManualPage({ publicAccess = false }: FormManualPageP
               </select>
             </label>
             <label className={labelClass}>
-              Parameter ({pressureUnit})
+              Torque Setting ({pressureUnit})
               <input className={`${publicInputClass} mt-2`} inputMode="decimal" name="parameter_pressure" placeholder="0.30" required />
             </label>
             <label className={labelClass}>
-              Pressure Input ({pressureUnit})
+              Torque Actual ({pressureUnit})
               <input className={`${publicInputClass} mt-2`} inputMode="decimal" name="pressure_input" placeholder="0.30" required />
             </label>
             <label className={labelClass}>
@@ -385,11 +385,11 @@ export default function FormManualPage({ publicAccess = false }: FormManualPageP
               </select>
             </label>
             <label className={labelClass}>
-              Parameter ({pressureUnit})
+              Torque Setting ({pressureUnit})
               <input className={`${inputClass} mt-2`} inputMode="decimal" name="parameter_pressure" placeholder="0.30" required />
             </label>
             <label className={labelClass}>
-              Pressure Input ({pressureUnit})
+              Torque Actual ({pressureUnit})
               <input className={`${inputClass} mt-2`} inputMode="decimal" name="pressure_input" placeholder="0.30" required />
             </label>
             <label className={labelClass}>
@@ -455,15 +455,15 @@ export default function FormManualPage({ publicAccess = false }: FormManualPageP
                 <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white">{displayOptional(selectedRecord.parameter_channel_no)}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-                <p className={labelClass}>Parameter Pressure ({pressureUnit})</p>
+                <p className={labelClass}>Torque Setting ({pressureUnit})</p>
                 <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white">{displayNumber(selectedRecord.parameter_pressure)}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-                <p className={labelClass}>Pressure Limit (TP LL ~ TP UL) ({pressureUnit})</p>
+                <p className={labelClass}>Torque Limit ({pressureUnit})</p>
                 <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white">{displayUnitlessText(selectedRecord.parameter_limit)}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950">
-                <p className={labelClass}>Pressure Input ({pressureUnit})</p>
+                <p className={labelClass}>Torque Actual ({pressureUnit})</p>
                 <p className="mt-2 text-sm font-bold text-slate-900 dark:text-white">{displayNumber(selectedRecord.pressure_input)}</p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950">

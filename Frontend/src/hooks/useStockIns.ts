@@ -5,7 +5,7 @@ import StockInService, {
   StockIn,
   StockInQuery,
 } from "@/services/StockInService";
-import { ApiListResponse } from "@/services/ParameterService";
+import type { ApiListResponse } from "@/services/apiTypes";
 
 type UseStockInsOptions = StockInQuery & {
   enabled?: boolean;
